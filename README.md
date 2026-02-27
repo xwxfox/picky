@@ -11,6 +11,9 @@ note: this is built for bun + typescript, zero runtime deps.
 - understands dates (Date, ISO strings, timestamps)
 - supports arrays once per path (by design)
 - has a small cache for hot paths + date parsing
+- supports nested objects, Array<object>s, with pretty nice paths n full type safety
+- methods for `or, and & not` grouping
+- equals, lessThan, greaterThan, lessThanOrEquals, in, notIn, contains, startsWith, endsWith, matches (regex), areaySome, arrayAny, arrayNone, between, dateBefore, dateAfter, dateBetween & more predicates 
 
 ## owo
 ```ts
@@ -22,6 +25,8 @@ const result = FilterEngine.from(data)
   .nested("Logs", q => q.equals("type", "CREDIT_MAX_EXCEEDED"))
   .result();
 ```
+
+All of the fields and values n everything are fully typesafe automatically (editor autocomplete with available keys / paths, comptime & lsp validity checking etc)
 
 ## run tests
 ```sh
