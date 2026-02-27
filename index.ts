@@ -529,7 +529,7 @@ function createDateBetweenPredicate(
     };
 }
 
-// note: option 3 (stricter compile-time shape) example:
+// note: stricter compile-time shape could also work
 // type Resolvable<T> = T extends object ? { [K in keyof T]: Resolvable<T[K]> } : T;
 // pros: catches non-resolvable shapes early; cons: heavy on TS for deep/recursive types.
 export class FilterEngine<T extends Record<string, unknown>> {
