@@ -1,7 +1,7 @@
 # picky
 
-smol lil filter engine for arrays of *structured* objects.
-
+smol lil filter engine focussing on perf optimizations and nice sugary DX for arrays of *structured* objects.
+> WIP, but functional. Still trying to find more fast-paths & micro optimizations uwu
 note: this is built for bun + typescript, zero runtime deps.
 
 > it is actually quite neat but i hate writing docs so go dig in the code u fkn twink
