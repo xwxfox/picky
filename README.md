@@ -13,6 +13,7 @@ note: this is built for bun + typescript, zero runtime deps.
 - has a small cache for hot paths + date parsing
 - supports nested objects, Array<object>s, with pretty nice paths n full type safety
 - methods for `or, and & not` grouping
+- `nested` method for "stepping into" an areay of objects
 - equals, lessThan, greaterThan, lessThanOrEquals, in, notIn, contains, startsWith, endsWith, matches (regex), areaySome, arrayAny, arrayNone, between, dateBefore, dateAfter, dateBetween & more predicates 
 
 ## owo
