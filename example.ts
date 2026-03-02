@@ -173,6 +173,21 @@ const res = filter.in("HandledBy.SalesRep", ["PAW", "OWO"])
         p.arraySome("tags", tag => tag === "x")
     )
     .dateBetween("created", "2026-01-01", "2026-02-31")
+    .orderByDate("created", { direction: "desc" })
+    .limit(5)
     .result();
 
 console.dir(res, { depth: null });
+
+const grouped = FilterEngine.from(data)
+    .equals("active", true)
+    .groupBy("HandledBy.SalesRep");
+
+console.dir(grouped, { depth: null });
+
+const cursor = FilterEngine.from(data)
+    .orderByDate("created", { direction: "desc" })
+    .resultPaginated({ pageSize: 2, total: "lazy" });
+
+console.dir(cursor.data, { depth: null });
+console.dir(cursor.next().data, { depth: null });

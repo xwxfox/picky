@@ -18,6 +18,26 @@ type Comparable =
     | bigint
     | Date;
 
+type SortKey = number | string | bigint;
+
+type OrderDirection = "asc" | "desc";
+type NullOrder = "first" | "last";
+
+type GroupableValue =
+    | string
+    | number
+    | boolean
+    | bigint
+    | symbol
+    | Date;
+
+type GroupKeyValue =
+    | string
+    | number
+    | boolean
+    | bigint
+    | symbol;
+
 type ResolveValue =
     | ScalarValue
     | { [key: string]: ResolveValue }
@@ -93,6 +113,22 @@ type DatePaths<T> = {
     [P in Paths<T>]: Extract<PathValue<T, P>, Date | string | number> extends never ? never : P
 }[Paths<T>];
 
+type SortablePaths<T> = {
+    [P in Paths<T>]: Extract<PathValue<T, P>, Comparable> extends never ? never : P
+}[Paths<T>];
+
+type GroupablePaths<T> = {
+    [P in Paths<T>]: Extract<PathValue<T, P>, GroupableValue> extends never ? never : P
+}[Paths<T>];
+
+type NonNullablePathValue<T, P extends string> = Exclude<PathValue<T, P>, null | undefined>;
+
+type GroupKey<T, P extends string> = NonNullablePathValue<T, P> extends infer U
+    ? U extends Date
+        ? number
+        : U
+    : never;
+
 type ArrayPaths<T, SeenArray extends boolean = false, Depth extends number = 5> = Depth extends 0
     ? never
     : {
@@ -106,6 +142,17 @@ type ArrayPaths<T, SeenArray extends boolean = false, Depth extends number = 5> 
             ? `${K}.${ArrayPaths<NonNullable<T[K]>, SeenArray, Prev[Depth]>}`
             : never
 }[keyof T & string];
+
+type StableEntry<T> = {
+    index: number;
+    item: T;
+};
+
+type Orderable<T> = {
+    item: T;
+    index: number;
+    keys: (SortKey | null)[];
+};
 
 // note: date parsing is intentionally permissive; use date* methods explicitly.
 const isoDateRegex = /^\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?)?$/;
@@ -121,6 +168,10 @@ type CacheState = {
     pathSegmentsCache: Map<string, string[]>;
     dateCache: Map<string, number | null>;
     parseIsoDate: (value: string) => number | null;
+    orderResolver: ResolveSortKey;
+    orderResolverDate: ResolveSortKey;
+    groupKeyConverter: (value: ResolveValue) => GroupKeyValue | null;
+    groupKeyConverterDate: (value: ResolveValue) => GroupKeyValue | null;
 };
 
 const defaultCacheOptions: CacheOptions = {
@@ -159,6 +210,10 @@ function createCacheState(options: CacheOptions): CacheState {
     const pathSegmentsCache = new Map<string, string[]>();
     const dateCache = new Map<string, number | null>();
     const parseIsoDate = createDateCache(dateCache, options.maxDateCache);
+    const orderResolver = createOrderResolver();
+    const orderResolverDate = createOrderResolverDate(parseIsoDate);
+    const groupKeyConverter = createGroupKeyConverter();
+    const groupKeyConverterDate = createGroupKeyConverterDate(parseIsoDate);
 
     return {
         maxDateCache: options.maxDateCache,
@@ -166,6 +221,10 @@ function createCacheState(options: CacheOptions): CacheState {
         pathSegmentsCache,
         dateCache,
         parseIsoDate,
+        orderResolver,
+        orderResolverDate,
+        groupKeyConverter,
+        groupKeyConverterDate,
     };
 }
 
@@ -196,6 +255,97 @@ function getSegments(cache: CacheState, path: string): string[] {
 
 
 type ResolvePredicate = (value: ResolveValue) => boolean;
+
+type ResolveSortKey = (value: ResolveValue) => SortKey | null;
+
+type OrderSpec = {
+    segments: string[];
+    direction: 1 | -1;
+    nullsFirst: boolean;
+    resolve: ResolveSortKey;
+};
+
+type GroupSpec = {
+    segments: string[];
+    convert: (value: ResolveValue) => GroupKeyValue | null;
+};
+
+function compareNullable(
+    left: SortKey | null,
+    right: SortKey | null,
+    direction: 1 | -1,
+    nullsFirst: boolean
+): number {
+    const leftNull = left === null;
+    const rightNull = right === null;
+    if (leftNull || rightNull) {
+        if (leftNull && rightNull) return 0;
+        if (leftNull) return nullsFirst ? -1 : 1;
+        return nullsFirst ? 1 : -1;
+    }
+
+    if (typeof left === "number") return (left - (right as number)) * direction;
+    if (typeof left === "string") return (left < (right as string) ? -1 : left > (right as string) ? 1 : 0) * direction;
+    if (typeof left === "bigint") return (left < (right as bigint) ? -1 : left > (right as bigint) ? 1 : 0) * direction;
+    return 0;
+}
+
+function createComparator<T>(orders: readonly OrderSpec[]): (a: Orderable<T>, b: Orderable<T>) => number {
+    const count = orders.length;
+    if (count === 1) {
+        return (a, b) => {
+            const diff = compareNullable(a.keys[0] ?? null, b.keys[0] ?? null, orders[0]!.direction, orders[0]!.nullsFirst);
+            return diff === 0 ? a.index - b.index : diff;
+        };
+    }
+    if (count === 2) {
+        return (a, b) => {
+            const diff0 = compareNullable(a.keys[0] ?? null, b.keys[0] ?? null, orders[0]!.direction, orders[0]!.nullsFirst);
+            if (diff0 !== 0) return diff0;
+            const diff1 = compareNullable(a.keys[1] ?? null, b.keys[1] ?? null, orders[1]!.direction, orders[1]!.nullsFirst);
+            return diff1 === 0 ? a.index - b.index : diff1;
+        };
+    }
+    if (count === 3) {
+        return (a, b) => {
+            const diff0 = compareNullable(a.keys[0] ?? null, b.keys[0] ?? null, orders[0]!.direction, orders[0]!.nullsFirst);
+            if (diff0 !== 0) return diff0;
+            const diff1 = compareNullable(a.keys[1] ?? null, b.keys[1] ?? null, orders[1]!.direction, orders[1]!.nullsFirst);
+            if (diff1 !== 0) return diff1;
+            const diff2 = compareNullable(a.keys[2] ?? null, b.keys[2] ?? null, orders[2]!.direction, orders[2]!.nullsFirst);
+            return diff2 === 0 ? a.index - b.index : diff2;
+        };
+    }
+
+    return (a, b) => {
+        for (let i = 0; i < count; i++) {
+            const diff = compareNullable(a.keys[i] ?? null, b.keys[i] ?? null, orders[i]!.direction, orders[i]!.nullsFirst);
+            if (diff !== 0) return diff;
+        }
+        return a.index - b.index;
+    };
+}
+
+type PaginationTotalMode = "none" | "lazy" | "full";
+
+type PaginationOptions = {
+    pageSize: number;
+    page?: number;
+    total?: PaginationTotalMode;
+};
+
+type PaginationCursor<T> = {
+    data: T[];
+    page: number;
+    total?: number;
+    next: () => PaginationCursor<T>;
+    previous: () => PaginationCursor<T>;
+};
+
+type OrderOptions = {
+    direction?: OrderDirection;
+    nulls?: NullOrder;
+};
 
 function someResolvedWithSegments(
     obj: ResolveObject,
@@ -258,6 +408,190 @@ function someResolvedWithSegments(
     }
 
     return false;
+}
+
+function resolveFirstWithSegments(
+    obj: ResolveObject,
+    segments: string[]
+): ResolveValue | undefined {
+    if (obj == null || typeof obj !== "object") return undefined;
+    if (segments.length === 1) {
+        const resolved = (obj as ResolveObject)[segments[0]!];
+        if (Array.isArray(resolved)) return resolved.length > 0 ? (resolved[0] as ResolveValue) : undefined;
+        return resolved as ResolveValue;
+    }
+
+    let current: ResolveValue[] = [obj as ResolveValue];
+    let next: ResolveValue[] = [];
+    let seenArray = false;
+
+    for (let i = 0; i < segments.length; i++) {
+        const segment = segments[i]!;
+        const isLast = i === segments.length - 1;
+        let nextIndex = 0;
+
+        for (let j = 0; j < current.length; j++) {
+            const value = current[j];
+            if (value == null) continue;
+            if (typeof value !== "object") continue;
+
+            const resolved = (value as ResolveObject)[segment];
+
+            if (Array.isArray(resolved)) {
+                if (seenArray) continue;
+                if (isLast) {
+                    return resolved.length > 0 ? (resolved[0] as ResolveValue) : undefined;
+                }
+                seenArray = true;
+                for (let k = 0; k < resolved.length; k++) {
+                    next[nextIndex++] = resolved[k] as ResolveValue;
+                }
+            } else if (isLast) {
+                return resolved as ResolveValue;
+            } else {
+                next[nextIndex++] = resolved as ResolveValue;
+            }
+        }
+
+        if (isLast) return undefined;
+
+        next.length = nextIndex;
+        const temp = current;
+        current = next;
+        next = temp;
+    }
+
+    return undefined;
+}
+
+function forEachResolvedWithSegments(
+    obj: ResolveObject,
+    segments: string[],
+    visit: (value: ResolveValue) => void
+): void {
+    if (obj == null || typeof obj !== "object") return;
+
+    if (segments.length === 1) {
+        const resolved = (obj as ResolveObject)[segments[0]!];
+        if (Array.isArray(resolved)) {
+            for (let i = 0; i < resolved.length; i++) {
+                visit(resolved[i] as ResolveValue);
+            }
+            return;
+        }
+        visit(resolved as ResolveValue);
+        return;
+    }
+
+    let current: ResolveValue[] = [obj as ResolveValue];
+    let next: ResolveValue[] = [];
+    let seenArray = false;
+
+    for (let i = 0; i < segments.length; i++) {
+        const segment = segments[i]!;
+        const isLast = i === segments.length - 1;
+        let nextIndex = 0;
+
+        for (let j = 0; j < current.length; j++) {
+            const value = current[j];
+            if (value == null) continue;
+            if (typeof value !== "object") continue;
+
+            const resolved = (value as ResolveObject)[segment];
+
+            if (Array.isArray(resolved)) {
+                if (seenArray) continue;
+                if (isLast) {
+                    for (let k = 0; k < resolved.length; k++) {
+                        visit(resolved[k] as ResolveValue);
+                    }
+                } else {
+                    seenArray = true;
+                    for (let k = 0; k < resolved.length; k++) {
+                        next[nextIndex++] = resolved[k] as ResolveValue;
+                    }
+                }
+            } else if (isLast) {
+                visit(resolved as ResolveValue);
+            } else {
+                next[nextIndex++] = resolved as ResolveValue;
+            }
+        }
+
+        if (isLast) return;
+
+        next.length = nextIndex;
+        const temp = current;
+        current = next;
+        next = temp;
+    }
+}
+
+function resolveOrderValueWithSegments(
+    obj: ResolveObject,
+    segments: string[],
+    resolve: ResolveSortKey
+): SortKey | null {
+    const value = resolveFirstWithSegments(obj, segments);
+    if (value === undefined || value === null) return null;
+    return resolve(value);
+}
+
+function createOrderResolver(): ResolveSortKey {
+    return (value) => {
+        if (typeof value === "number") return Number.isNaN(value) ? null : value;
+        if (typeof value === "string") return value;
+        if (typeof value === "bigint") return value;
+        if (value instanceof Date) {
+            const time = value.getTime();
+            return Number.isNaN(time) ? null : time;
+        }
+        return null;
+    };
+}
+
+function createOrderResolverDate(parseIsoDate: (value: string) => number | null): ResolveSortKey {
+    return (value) => {
+        if (value instanceof Date) {
+            const time = value.getTime();
+            return Number.isNaN(time) ? null : time;
+        }
+        if (typeof value === "number") return Number.isNaN(value) ? null : value;
+        if (typeof value === "string") return parseIsoDate(value);
+        return null;
+    };
+}
+
+function createGroupKeyConverter() {
+    return (value: ResolveValue): GroupKeyValue | null => {
+        if (value == null) return null;
+        if (typeof value === "string") return value;
+        if (typeof value === "number") return Number.isNaN(value) ? null : value;
+        if (typeof value === "boolean") return value;
+        if (typeof value === "bigint") return value;
+        if (typeof value === "symbol") return value;
+        if (value instanceof Date) {
+            const time = value.getTime();
+            return Number.isNaN(time) ? null : time;
+        }
+        return null;
+    };
+}
+
+function createGroupKeyConverterDate(parseIsoDate: (value: string) => number | null) {
+    return (value: ResolveValue): GroupKeyValue | null => {
+        if (value == null) return null;
+        if (value instanceof Date) {
+            const time = value.getTime();
+            return Number.isNaN(time) ? null : time;
+        }
+        if (typeof value === "number") return Number.isNaN(value) ? null : value;
+        if (typeof value === "string") return parseIsoDate(value);
+        if (typeof value === "boolean") return value;
+        if (typeof value === "bigint") return value;
+        if (typeof value === "symbol") return value;
+        return null;
+    };
 }
 
 function everyResolvedWithSegments(
@@ -536,7 +870,10 @@ export class FilterEngine<T extends Record<string, unknown>> {
     private constructor(
         private readonly data: readonly T[],
         private readonly predicates: readonly Predicate<T>[],
-        private readonly cache: CacheState
+        private readonly cache: CacheState,
+        private readonly orders: readonly OrderSpec[] = [],
+        private readonly limitCount: number | null = null,
+        private readonly offsetCount: number = 0
     ) { }
 
     static from<T extends Record<string, unknown>>(data: readonly T[]): FilterEngine<T> {
@@ -567,16 +904,423 @@ export class FilterEngine<T extends Record<string, unknown>> {
     }
 
     private withPredicate(predicate: Predicate<T>): FilterEngine<T> {
-        return new FilterEngine(this.data, [...this.predicates, predicate], this.cache);
+        return new FilterEngine(
+            this.data,
+            [...this.predicates, predicate],
+            this.cache,
+            this.orders,
+            this.limitCount,
+            this.offsetCount
+        );
     }
 
     private andPredicate(condition: Predicate<T>): FilterEngine<T> {
         return this.withPredicate(condition);
     }
 
-    public result(): T[] {
+    private applyPipeline(): T[] {
         const predicate = this.compile();
-        return this.data.filter(predicate);
+        const hasOrder = this.orders.length > 0;
+        const limitCount = this.limitCount;
+        const offsetCount = this.offsetCount;
+
+        if (!hasOrder && (limitCount !== null || offsetCount > 0)) {
+            const result: T[] = [];
+            const start = offsetCount > 0 ? offsetCount : 0;
+            const max = limitCount === null ? Number.POSITIVE_INFINITY : limitCount;
+            if (max <= 0) return result;
+
+            let matched = 0;
+            for (let i = 0; i < this.data.length; i++) {
+                const item = this.data[i]!;
+                if (!predicate(item)) continue;
+                if (matched < start) {
+                    matched++;
+                    continue;
+                }
+                result.push(item);
+                matched++;
+                if (result.length >= max) break;
+            }
+            return result;
+        }
+
+        const filtered: T[] = [];
+        for (let i = 0; i < this.data.length; i++) {
+            const item = this.data[i]!;
+            if (predicate(item)) filtered.push(item);
+        }
+
+        if (!hasOrder) {
+            if (offsetCount > 0 || limitCount !== null) {
+                const start = offsetCount > 0 ? offsetCount : 0;
+                const end = limitCount === null ? filtered.length : start + limitCount;
+                if (start >= filtered.length) return [];
+                return filtered.slice(start, end);
+            }
+            return filtered;
+        }
+
+        const orderCount = this.orders.length;
+        const entries: Orderable<T>[] = new Array(filtered.length);
+        for (let i = 0; i < filtered.length; i++) {
+            const item = filtered[i]!;
+            const keys = new Array<SortKey | null>(orderCount);
+            for (let j = 0; j < orderCount; j++) {
+                const order = this.orders[j]!;
+                keys[j] = resolveOrderValueWithSegments(item as ResolveObject, order.segments, order.resolve);
+            }
+            entries[i] = { item, index: i, keys };
+        }
+
+        entries.sort(createComparator(this.orders));
+
+        const start = offsetCount > 0 ? offsetCount : 0;
+        const end = limitCount === null ? entries.length : start + limitCount;
+        if (start >= entries.length) return [];
+        const result: T[] = [];
+        const last = end < entries.length ? end : entries.length;
+        for (let i = start; i < last; i++) {
+            result.push(entries[i]!.item);
+        }
+        return result;
+    }
+
+    private groupItems(
+        items: readonly T[],
+        segments: string[],
+        convert: (value: ResolveValue) => GroupKeyValue | null
+    ): Map<GroupKeyValue, T[]> {
+        const result = new Map<GroupKeyValue, T[]>();
+        for (let i = 0; i < items.length; i++) {
+            const item = items[i]!;
+            forEachResolvedWithSegments(item as ResolveObject, segments, (value) => {
+                const key = convert(value);
+                if (key === null || key === undefined) return;
+                const bucket = result.get(key);
+                if (bucket) bucket.push(item);
+                else result.set(key, [item]);
+            });
+        }
+        return result;
+    }
+
+    private createCursorUnordered(
+        predicate: Predicate<T>,
+        pageSize: number,
+        startPage: number,
+        totalMode: PaginationTotalMode
+    ): PaginationCursor<T> {
+        const data = this.data;
+        const length = data.length;
+        const history: number[] = [];
+        let scanIndex = 0;
+        let matchedCount = 0;
+        let page = startPage > 0 ? startPage : 1;
+        let cachedTotal: number | undefined;
+
+        if (totalMode === "full") {
+            let total = 0;
+            for (let i = 0; i < length; i++) {
+                if (predicate(data[i]!)) total++;
+            }
+            cachedTotal = total;
+        }
+
+        const totalFn = () => {
+            if (totalMode === "none") return undefined;
+            if (cachedTotal !== undefined) return cachedTotal;
+            let total = 0;
+            for (let i = 0; i < length; i++) {
+                if (predicate(data[i]!)) total++;
+            }
+            cachedTotal = total;
+            return total;
+        };
+
+        const cursor: PaginationCursor<T> = {
+            data: [],
+            page,
+            total: totalMode === "none" ? undefined : cachedTotal,
+            next: () => {
+                page++;
+                fillPage(cursor.data, page);
+                cursor.page = page;
+                cursor.total = totalFn();
+                return cursor;
+            },
+            previous: () => {
+                if (page <= 1) return cursor;
+                page--;
+                restorePageStart(page);
+                fillPage(cursor.data, page);
+                cursor.page = page;
+                cursor.total = totalFn();
+                return cursor;
+            },
+        };
+
+        const restorePageStart = (targetPage: number) => {
+            const targetIndex = targetPage - 1;
+            const idx = targetIndex > 0 ? history[targetIndex - 1] : 0;
+            scanIndex = idx ?? 0;
+            matchedCount = (targetPage - 1) * pageSize;
+        };
+
+        const fillPage = (buffer: T[], targetPage: number) => {
+            const targetMatched = (targetPage - 1) * pageSize;
+            if (matchedCount > targetMatched) {
+                restorePageStart(targetPage);
+            } else if (matchedCount < targetMatched) {
+                while (matchedCount < targetMatched && scanIndex < length) {
+                    const item = data[scanIndex++]!;
+                    if (predicate(item)) matchedCount++;
+                }
+            }
+
+            const pageStart = scanIndex;
+            buffer.length = 0;
+
+            let collected = 0;
+            while (scanIndex < length && collected < pageSize) {
+                const item = data[scanIndex++]!;
+                if (!predicate(item)) continue;
+                buffer[collected++] = item;
+                matchedCount++;
+            }
+
+            if (history.length < targetPage) history.push(pageStart);
+        };
+
+        fillPage(cursor.data, page);
+        cursor.total = totalFn();
+        return cursor;
+    }
+
+    private createCursorOrdered(
+        predicate: Predicate<T>,
+        pageSize: number,
+        startPage: number,
+        totalMode: PaginationTotalMode
+    ): PaginationCursor<T> {
+        const filtered: T[] = [];
+        const data = this.data;
+        for (let i = 0; i < data.length; i++) {
+            const item = data[i]!;
+            if (predicate(item)) filtered.push(item);
+        }
+
+        const orderCount = this.orders.length;
+        const entries: Orderable<T>[] = new Array(filtered.length);
+        for (let i = 0; i < filtered.length; i++) {
+            const item = filtered[i]!;
+            const keys = new Array<SortKey | null>(orderCount);
+            for (let j = 0; j < orderCount; j++) {
+                const order = this.orders[j]!;
+                keys[j] = resolveOrderValueWithSegments(item as ResolveObject, order.segments, order.resolve);
+            }
+            entries[i] = { item, index: i, keys };
+        }
+
+        entries.sort(createComparator(this.orders));
+
+        const total = filtered.length;
+        const cursor: PaginationCursor<T> = {
+            data: [],
+            page: startPage > 0 ? startPage : 1,
+            total: totalMode === "none" ? undefined : total,
+            next: () => {
+                cursor.page++;
+                fillPage(cursor.data, cursor.page);
+                return cursor;
+            },
+            previous: () => {
+                if (cursor.page <= 1) return cursor;
+                cursor.page--;
+                fillPage(cursor.data, cursor.page);
+                return cursor;
+            },
+        };
+
+        const fillPage = (buffer: T[], page: number) => {
+            const start = (page - 1) * pageSize;
+            buffer.length = 0;
+            if (start >= entries.length) return;
+            const end = start + pageSize;
+            const last = end < entries.length ? end : entries.length;
+            for (let i = start; i < last; i++) {
+                buffer.push(entries[i]!.item);
+            }
+        };
+
+        fillPage(cursor.data, cursor.page);
+        return cursor;
+    }
+
+    public result(): T[] {
+        return this.applyPipeline();
+    }
+
+    public groupBy<P extends GroupablePaths<T>>(
+        field: P,
+        options?: { date?: boolean }
+    ): Map<GroupKey<T, P>, T[]> {
+        const segments = getSegments(this.cache, String(field));
+        const convert = options?.date ? this.cache.groupKeyConverterDate : this.cache.groupKeyConverter;
+
+        if (this.orders.length > 0) {
+            const items = this.applyPipeline();
+            return this.groupItems(items, segments, convert) as Map<GroupKey<T, P>, T[]>;
+        }
+
+        const predicate = this.compile();
+        const result = new Map<GroupKeyValue, T[]>();
+        const limitCount = this.limitCount;
+        const offsetCount = this.offsetCount;
+        const start = offsetCount > 0 ? offsetCount : 0;
+        const max = limitCount === null ? Number.POSITIVE_INFINITY : limitCount;
+        if (max <= 0) return result as Map<GroupKey<T, P>, T[]>;
+
+        let matched = 0;
+        for (let i = 0; i < this.data.length; i++) {
+            const item = this.data[i]!;
+            if (!predicate(item)) continue;
+            if (matched < start) {
+                matched++;
+                continue;
+            }
+            if (matched - start >= max) break;
+            matched++;
+
+            forEachResolvedWithSegments(item as ResolveObject, segments, (value) => {
+                const key = convert(value);
+                if (key === null || key === undefined) return;
+                const bucket = result.get(key);
+                if (bucket) bucket.push(item);
+                else result.set(key, [item]);
+            });
+        }
+
+        return result as Map<GroupKey<T, P>, T[]>;
+    }
+
+    public resultPaginated(options: PaginationOptions): PaginationCursor<T> {
+        const safeSize = Number.isFinite(options.pageSize) && options.pageSize > 0
+            ? Math.floor(options.pageSize)
+            : 1;
+        const safePage = Number.isFinite(options.page) && options.page! > 0
+            ? Math.floor(options.page!)
+            : 1;
+        const totalMode: PaginationTotalMode = options.total ?? "none";
+
+        const predicate = this.compile();
+        const hasOrder = this.orders.length > 0;
+        const startPage = safePage;
+        const pageSize = safeSize;
+
+        if (!hasOrder) {
+            return this.createCursorUnordered(predicate, pageSize, startPage, totalMode);
+        }
+
+        return this.createCursorOrdered(predicate, pageSize, startPage, totalMode);
+    }
+
+    public orderBy<P extends SortablePaths<T>>(
+        field: P,
+        options?: OrderOptions
+    ): FilterEngine<T> {
+        const segments = getSegments(this.cache, String(field));
+        const direction = options?.direction === "desc" ? -1 : 1;
+        const nullsFirst = options?.nulls === "first";
+        const order: OrderSpec = {
+            segments,
+            direction,
+            nullsFirst,
+            resolve: this.cache.orderResolver,
+        };
+        return new FilterEngine(
+            this.data,
+            this.predicates,
+            this.cache,
+            [...this.orders, order],
+            this.limitCount,
+            this.offsetCount
+        );
+    }
+
+    public orderByDate<P extends DatePaths<T>>(
+        field: P,
+        options?: OrderOptions
+    ): FilterEngine<T> {
+        const segments = getSegments(this.cache, String(field));
+        const direction = options?.direction === "desc" ? -1 : 1;
+        const nullsFirst = options?.nulls === "first";
+        const order: OrderSpec = {
+            segments,
+            direction,
+            nullsFirst,
+            resolve: this.cache.orderResolverDate,
+        };
+        return new FilterEngine(
+            this.data,
+            this.predicates,
+            this.cache,
+            [...this.orders, order],
+            this.limitCount,
+            this.offsetCount
+        );
+    }
+
+    public thenBy<P extends SortablePaths<T>>(
+        field: P,
+        options?: OrderOptions
+    ): FilterEngine<T> {
+        return this.orderBy(field, options);
+    }
+
+    public thenByDate<P extends DatePaths<T>>(
+        field: P,
+        options?: OrderOptions
+    ): FilterEngine<T> {
+        return this.orderByDate(field, options);
+    }
+
+    public limit(count: number): FilterEngine<T> {
+        const safeCount = Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0;
+        return new FilterEngine(
+            this.data,
+            this.predicates,
+            this.cache,
+            this.orders,
+            safeCount,
+            this.offsetCount
+        );
+    }
+
+    public offset(count: number): FilterEngine<T> {
+        const safeCount = Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0;
+        return new FilterEngine(
+            this.data,
+            this.predicates,
+            this.cache,
+            this.orders,
+            this.limitCount,
+            safeCount
+        );
+    }
+
+    public page(page: number, pageSize: number): FilterEngine<T> {
+        const safePage = Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
+        const safeSize = Number.isFinite(pageSize) && pageSize > 0 ? Math.floor(pageSize) : 1;
+        const offset = (safePage - 1) * safeSize;
+        return new FilterEngine(
+            this.data,
+            this.predicates,
+            this.cache,
+            this.orders,
+            safeSize,
+            offset
+        );
     }
 
     public compile(): Predicate<T> {
@@ -621,7 +1365,7 @@ export class FilterEngine<T extends Record<string, unknown>> {
         // note: or() collapses prior predicates into one group; keeps semantics simple.
         return new FilterEngine(this.data, [
             (item) => left(item) || group(item)
-        ], this.cache);
+        ], this.cache, this.orders, this.limitCount, this.offsetCount);
     }
 
     public not(

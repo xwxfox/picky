@@ -25,6 +25,7 @@ note: this is built for bun + typescript, zero runtime deps.
 - arraySome, arrayEvery, arrayNone
 - between, dateBefore, dateAfter, dateBetween, dateEquals
 - custom predicates if u wanna do cursed stuff manually
+- ordering, limiting, pagination, grouping
 
 > im still thinking of other stuff to add/improve - check NOTES.md (though its not really formatted for "others" and more for my ideas n stuff)
 
@@ -38,7 +39,22 @@ const result = FilterEngine.from(data)
   .equals("meta.owner.name", "Alice")
   .dateBetween("created", "2024-01-01", "2024-02-01")
   .nested("logs", q => q.equals("type", "CREDIT_MAX_EXCEEDED"))
+  .orderBy("score", { direction: "desc" })
+  .limit(10)
   .result();
+```
+
+```ts
+const grouped = FilterEngine.from(data)
+  .equals("active", true)
+  .orderBy("name")
+  .groupBy("meta.owner.name");
+
+const cursor = FilterEngine.from(data)
+  .orderByDate("created")
+  .resultPaginated({ pageSize: 50, total: "lazy" });
+
+cursor.next();
 ```
 
 All fields + values are fully typesafe automatically  
@@ -131,6 +147,17 @@ why?
 - small but measurable gain in tight filtering loops
 
 
+### limit/offset fast path
+
+limit/offset without ordering uses a streaming filter with early exit.
+
+why?
+
+- avoids allocating full filtered arrays
+- breaks early once `offset + limit` is satisfied
+- keeps hot loop tight
+
+
 
 ### pre-specialized comparison predicates
 
@@ -196,6 +223,17 @@ why?
 - prevents predicate tree explosion
 - keeps compiled predicate flat
 - easier for JIT to optimize
+
+
+### ordering & grouping are optional
+
+ordering only materializes sorted buffers when needed.
+
+why?
+
+- keeps default filtering zero-cost for ordering
+- avoids extra allocations when you don't request it
+- allows fast-path limit/offset
 
 
 

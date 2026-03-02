@@ -707,3 +707,108 @@ describe("FilterEngine fast - extreme break tests", () => {
         expect(result).toEqual([2]);
     });
 });
+
+describe("FilterEngine fast - ordering, limiting, pagination, grouping", () => {
+    it("orders ascending with stable ties", () => {
+        const result = makeEngine()
+            .orderBy("score")
+            .result()
+            .map(item => item.id);
+        expect(result).toEqual([3, 1, 4, 2]);
+    });
+
+    it("orders descending with thenBy", () => {
+        const result = makeEngine()
+            .orderBy("score", { direction: "desc" })
+            .thenBy("name")
+            .result()
+            .map(item => item.id);
+        expect(result).toEqual([2, 1, 4, 3]);
+    });
+
+    it("orders dates with date resolver", () => {
+        const result = makeEngine()
+            .orderByDate("created", { direction: "asc" })
+            .result()
+            .map(item => item.id);
+        expect(result).toEqual([1, 4, 2, 3]);
+    });
+
+    it("applies offset + limit without sorting", () => {
+        const result = makeEngine()
+            .equals("active", true)
+            .offset(1)
+            .limit(1)
+            .result()
+            .map(item => item.id);
+        expect(result).toEqual([3]);
+    });
+
+    it("applies offset + limit after ordering", () => {
+        const result = makeEngine()
+            .orderBy("name")
+            .offset(1)
+            .limit(2)
+            .result()
+            .map(item => item.id);
+        expect(result).toEqual([2, 4]);
+    });
+
+    it("paginates without ordering (streaming)", () => {
+        const cursor = makeEngine()
+            .equals("active", true)
+            .resultPaginated({ pageSize: 2 });
+        expect(cursor.data.map(item => item.id)).toEqual([1, 3]);
+        expect(cursor.total).toBeUndefined();
+
+        const next = cursor.next();
+        expect(next.data.map(item => item.id)).toEqual([4]);
+    });
+
+    it("paginates with ordering and total", () => {
+        const cursor = makeEngine()
+            .equals("active", true)
+            .orderBy("name")
+            .resultPaginated({ pageSize: 2, total: "full" });
+        expect(cursor.data.map(item => item.id)).toEqual([1, 4]);
+        expect(cursor.total).toEqual(3);
+
+        const next = cursor.next();
+        expect(next.data.map(item => item.id)).toEqual([3]);
+
+        const prev = next.previous();
+        expect(prev.data.map(item => item.id)).toEqual([1, 4]);
+    });
+
+    it("groups by scalar values", () => {
+        const grouped = makeEngine().groupBy("HandledBy.SalesRep");
+        expect(grouped.get("NHR")?.map(item => item.id)).toEqual([1, 4]);
+        expect(grouped.get("THS")?.map(item => item.id)).toEqual([3]);
+    });
+
+    it("groups by array leaf values", () => {
+        const grouped = makeEngine().groupBy("flags");
+        expect(grouped.get("red")?.map(item => item.id)).toEqual([1, 4]);
+        expect(grouped.get("green")?.map(item => item.id)).toEqual([2]);
+        expect(grouped.get("blue")?.map(item => item.id)).toEqual([1]);
+    });
+
+    it("groups after ordering pipeline", () => {
+        const grouped = makeEngine()
+            .orderBy("name")
+            .groupBy("label");
+        expect(grouped.get("2024-01-01")?.map(item => item.id)).toEqual([1, 4]);
+    });
+
+    it("rejects non-sortable paths at compile time", () => {
+        makeEngine()
+            // @ts-expect-error - cannot sort by object path
+            .orderBy("meta");
+    });
+
+    it("rejects non-groupable paths at compile time", () => {
+        makeEngine()
+            // @ts-expect-error - cannot group by object path
+            .groupBy("meta");
+    });
+});
