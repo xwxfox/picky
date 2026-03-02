@@ -148,11 +148,34 @@ type StableEntry<T> = {
     item: T;
 };
 
-type Orderable<T> = {
+type Orderable1<T> = {
+    item: T;
+    index: number;
+    k0: SortKey | null;
+};
+
+type Orderable2<T> = {
+    item: T;
+    index: number;
+    k0: SortKey | null;
+    k1: SortKey | null;
+};
+
+type Orderable3<T> = {
+    item: T;
+    index: number;
+    k0: SortKey | null;
+    k1: SortKey | null;
+    k2: SortKey | null;
+};
+
+type OrderableN<T> = {
     item: T;
     index: number;
     keys: (SortKey | null)[];
 };
+
+type Orderable<T> = Orderable1<T> | Orderable2<T> | Orderable3<T> | OrderableN<T>;
 
 // note: date parsing is intentionally permissive; use date* methods explicitly.
 const isoDateRegex = /^\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?)?$/;
@@ -185,7 +208,7 @@ let sharedCacheState: CacheState | null = null;
 function createDateCache(cache: Map<string, number | null>, maxDateCache: number) {
     return (value: string): number | null => {
         const cached = cache.get(value);
-        if (cached !== undefined || cache.has(value)) return cached ?? null;
+        if (cached !== undefined) return cached;
 
         if (value.length < 10 || !isoDateRegex.test(value)) {
             cache.set(value, null);
@@ -276,6 +299,7 @@ function compareNullable(
     direction: 1 | -1,
     nullsFirst: boolean
 ): number {
+    if (left === right) return 0;
     const leftNull = left === null;
     const rightNull = right === null;
     if (leftNull || rightNull) {
@@ -290,40 +314,114 @@ function compareNullable(
     return 0;
 }
 
-function createComparator<T>(orders: readonly OrderSpec[]): (a: Orderable<T>, b: Orderable<T>) => number {
+function createComparator<T>(
+    orders: readonly OrderSpec[]
+): (
+    a: Orderable1<T> | Orderable2<T> | Orderable3<T> | OrderableN<T>,
+    b: Orderable1<T> | Orderable2<T> | Orderable3<T> | OrderableN<T>
+) => number {
     const count = orders.length;
     if (count === 1) {
+        const direction0 = orders[0]!.direction;
+        const nullsFirst0 = orders[0]!.nullsFirst;
         return (a, b) => {
-            const diff = compareNullable(a.keys[0] ?? null, b.keys[0] ?? null, orders[0]!.direction, orders[0]!.nullsFirst);
+            const diff = compareNullable(
+                (a as Orderable1<T>).k0,
+                (b as Orderable1<T>).k0,
+                direction0,
+                nullsFirst0
+            );
             return diff === 0 ? a.index - b.index : diff;
         };
     }
     if (count === 2) {
+        const direction0 = orders[0]!.direction;
+        const nullsFirst0 = orders[0]!.nullsFirst;
+        const direction1 = orders[1]!.direction;
+        const nullsFirst1 = orders[1]!.nullsFirst;
         return (a, b) => {
-            const diff0 = compareNullable(a.keys[0] ?? null, b.keys[0] ?? null, orders[0]!.direction, orders[0]!.nullsFirst);
+            const orderA = a as Orderable2<T>;
+            const orderB = b as Orderable2<T>;
+            const diff0 = compareNullable(orderA.k0, orderB.k0, direction0, nullsFirst0);
             if (diff0 !== 0) return diff0;
-            const diff1 = compareNullable(a.keys[1] ?? null, b.keys[1] ?? null, orders[1]!.direction, orders[1]!.nullsFirst);
+            const diff1 = compareNullable(orderA.k1, orderB.k1, direction1, nullsFirst1);
             return diff1 === 0 ? a.index - b.index : diff1;
         };
     }
     if (count === 3) {
+        const direction0 = orders[0]!.direction;
+        const nullsFirst0 = orders[0]!.nullsFirst;
+        const direction1 = orders[1]!.direction;
+        const nullsFirst1 = orders[1]!.nullsFirst;
+        const direction2 = orders[2]!.direction;
+        const nullsFirst2 = orders[2]!.nullsFirst;
         return (a, b) => {
-            const diff0 = compareNullable(a.keys[0] ?? null, b.keys[0] ?? null, orders[0]!.direction, orders[0]!.nullsFirst);
+            const orderA = a as Orderable3<T>;
+            const orderB = b as Orderable3<T>;
+            const diff0 = compareNullable(orderA.k0, orderB.k0, direction0, nullsFirst0);
             if (diff0 !== 0) return diff0;
-            const diff1 = compareNullable(a.keys[1] ?? null, b.keys[1] ?? null, orders[1]!.direction, orders[1]!.nullsFirst);
+            const diff1 = compareNullable(orderA.k1, orderB.k1, direction1, nullsFirst1);
             if (diff1 !== 0) return diff1;
-            const diff2 = compareNullable(a.keys[2] ?? null, b.keys[2] ?? null, orders[2]!.direction, orders[2]!.nullsFirst);
+            const diff2 = compareNullable(orderA.k2, orderB.k2, direction2, nullsFirst2);
             return diff2 === 0 ? a.index - b.index : diff2;
         };
     }
 
     return (a, b) => {
+        const orderA = a as OrderableN<T>;
+        const orderB = b as OrderableN<T>;
         for (let i = 0; i < count; i++) {
-            const diff = compareNullable(a.keys[i] ?? null, b.keys[i] ?? null, orders[i]!.direction, orders[i]!.nullsFirst);
+            const diff = compareNullable(
+                orderA.keys[i] as SortKey | null,
+                orderB.keys[i] as SortKey | null,
+                orders[i]!.direction,
+                orders[i]!.nullsFirst
+            );
             if (diff !== 0) return diff;
         }
         return a.index - b.index;
     };
+}
+
+function heapPush<T>(
+    heap: T[],
+    value: T,
+    compare: (a: T, b: T) => number
+): void {
+    heap.push(value);
+    let index = heap.length - 1;
+    while (index > 0) {
+        const parent = (index - 1) >> 1;
+        if (compare(heap[index]!, heap[parent]!) <= 0) break;
+        const temp = heap[parent]!;
+        heap[parent] = heap[index]!;
+        heap[index] = temp;
+        index = parent;
+    }
+}
+
+function heapReplaceRoot<T>(
+    heap: T[],
+    value: T,
+    compare: (a: T, b: T) => number
+): void {
+    heap[0] = value;
+    let index = 0;
+    const length = heap.length;
+    while (true) {
+        const left = (index << 1) + 1;
+        if (left >= length) return;
+        const right = left + 1;
+        let nextIndex = left;
+        if (right < length && compare(heap[right]!, heap[left]!) > 0) {
+            nextIndex = right;
+        }
+        if (compare(heap[nextIndex]!, heap[index]!) <= 0) return;
+        const temp = heap[index]!;
+        heap[index] = heap[nextIndex]!;
+        heap[nextIndex] = temp;
+        index = nextIndex;
+    }
 }
 
 type PaginationTotalMode = "none" | "lazy" | "full";
@@ -363,6 +461,78 @@ function someResolvedWithSegments(
             return false;
         }
         return predicate(resolved as ResolveValue);
+    }
+
+    if (segments.length === 2) {
+        const first = segments[0]!;
+        const second = segments[1]!;
+        const resolved = (obj as ResolveObject)[first];
+        if (Array.isArray(resolved)) {
+            for (let i = 0; i < resolved.length; i++) {
+                const entry = resolved[i] as ResolveValue;
+                if (entry == null || typeof entry !== "object") continue;
+                const value = (entry as ResolveObject)[second];
+                if (Array.isArray(value)) continue;
+                if (predicate(value as ResolveValue)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        if (resolved == null || typeof resolved !== "object") return false;
+        const value = (resolved as ResolveObject)[second];
+        if (Array.isArray(value)) {
+            for (let i = 0; i < value.length; i++) {
+                if (predicate(value[i] as ResolveValue)) return true;
+            }
+            return false;
+        }
+        return predicate(value as ResolveValue);
+    }
+
+    if (segments.length === 3) {
+        const first = segments[0]!;
+        const second = segments[1]!;
+        const third = segments[2]!;
+        const resolved = (obj as ResolveObject)[first];
+        if (Array.isArray(resolved)) {
+            for (let i = 0; i < resolved.length; i++) {
+                const entry = resolved[i] as ResolveValue;
+                if (entry == null || typeof entry !== "object") continue;
+                const value = (entry as ResolveObject)[second];
+                if (Array.isArray(value)) continue;
+                if (value == null || typeof value !== "object") continue;
+                const leaf = (value as ResolveObject)[third];
+                if (Array.isArray(leaf)) continue;
+                if (predicate(leaf as ResolveValue)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        if (resolved == null || typeof resolved !== "object") return false;
+        const value = (resolved as ResolveObject)[second];
+        if (Array.isArray(value)) {
+            for (let i = 0; i < value.length; i++) {
+                const entry = value[i] as ResolveValue;
+                if (entry == null || typeof entry !== "object") continue;
+                const leaf = (entry as ResolveObject)[third];
+                if (Array.isArray(leaf)) continue;
+                if (predicate(leaf as ResolveValue)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        if (value == null || typeof value !== "object") return false;
+        const leaf = (value as ResolveObject)[third];
+        if (Array.isArray(leaf)) {
+            for (let i = 0; i < leaf.length; i++) {
+                if (predicate(leaf[i] as ResolveValue)) return true;
+            }
+            return false;
+        }
+        return predicate(leaf as ResolveValue);
     }
 
     let current: ResolveValue[] = [obj as ResolveValue];
@@ -419,6 +589,64 @@ function resolveFirstWithSegments(
         const resolved = (obj as ResolveObject)[segments[0]!];
         if (Array.isArray(resolved)) return resolved.length > 0 ? (resolved[0] as ResolveValue) : undefined;
         return resolved as ResolveValue;
+    }
+
+    if (segments.length === 2) {
+        const first = segments[0]!;
+        const second = segments[1]!;
+        const resolved = (obj as ResolveObject)[first];
+        if (Array.isArray(resolved)) {
+            for (let i = 0; i < resolved.length; i++) {
+                const entry = resolved[i] as ResolveValue;
+                if (entry == null || typeof entry !== "object") continue;
+                const value = (entry as ResolveObject)[second];
+                if (Array.isArray(value)) continue;
+                return value as ResolveValue;
+            }
+            return undefined;
+        }
+        if (resolved == null || typeof resolved !== "object") return undefined;
+        const value = (resolved as ResolveObject)[second];
+        if (Array.isArray(value)) {
+            return value.length > 0 ? (value[0] as ResolveValue) : undefined;
+        }
+        return value as ResolveValue;
+    }
+
+    if (segments.length === 3) {
+        const first = segments[0]!;
+        const second = segments[1]!;
+        const third = segments[2]!;
+        const resolved = (obj as ResolveObject)[first];
+        if (Array.isArray(resolved)) {
+            for (let i = 0; i < resolved.length; i++) {
+                const entry = resolved[i] as ResolveValue;
+                if (entry == null || typeof entry !== "object") continue;
+                const value = (entry as ResolveObject)[second];
+                if (Array.isArray(value)) continue;
+                if (value == null || typeof value !== "object") continue;
+                const leaf = (value as ResolveObject)[third];
+                if (Array.isArray(leaf)) continue;
+                return leaf as ResolveValue;
+            }
+            return undefined;
+        }
+        if (resolved == null || typeof resolved !== "object") return undefined;
+        const value = (resolved as ResolveObject)[second];
+        if (Array.isArray(value)) {
+            for (let i = 0; i < value.length; i++) {
+                const entry = value[i] as ResolveValue;
+                if (entry == null || typeof entry !== "object") continue;
+                const leaf = (entry as ResolveObject)[third];
+                if (Array.isArray(leaf)) continue;
+                return leaf as ResolveValue;
+            }
+            return undefined;
+        }
+        if (value == null || typeof value !== "object") return undefined;
+        const leaf = (value as ResolveObject)[third];
+        if (Array.isArray(leaf)) return leaf.length > 0 ? (leaf[0] as ResolveValue) : undefined;
+        return leaf as ResolveValue;
     }
 
     let current: ResolveValue[] = [obj as ResolveValue];
@@ -480,6 +708,74 @@ function forEachResolvedWithSegments(
             return;
         }
         visit(resolved as ResolveValue);
+        return;
+    }
+
+    if (segments.length === 2) {
+        const first = segments[0]!;
+        const second = segments[1]!;
+        const resolved = (obj as ResolveObject)[first];
+        if (Array.isArray(resolved)) {
+            for (let i = 0; i < resolved.length; i++) {
+                const entry = resolved[i] as ResolveValue;
+                if (entry == null || typeof entry !== "object") continue;
+                const value = (entry as ResolveObject)[second];
+                if (Array.isArray(value)) continue;
+                visit(value as ResolveValue);
+            }
+            return;
+        }
+        if (resolved == null || typeof resolved !== "object") return;
+        const value = (resolved as ResolveObject)[second];
+        if (Array.isArray(value)) {
+            for (let i = 0; i < value.length; i++) {
+                visit(value[i] as ResolveValue);
+            }
+            return;
+        }
+        visit(value as ResolveValue);
+        return;
+    }
+
+    if (segments.length === 3) {
+        const first = segments[0]!;
+        const second = segments[1]!;
+        const third = segments[2]!;
+        const resolved = (obj as ResolveObject)[first];
+        if (Array.isArray(resolved)) {
+            for (let i = 0; i < resolved.length; i++) {
+                const entry = resolved[i] as ResolveValue;
+                if (entry == null || typeof entry !== "object") continue;
+                const value = (entry as ResolveObject)[second];
+                if (Array.isArray(value)) continue;
+                if (value == null || typeof value !== "object") continue;
+                const leaf = (value as ResolveObject)[third];
+                if (Array.isArray(leaf)) continue;
+                visit(leaf as ResolveValue);
+            }
+            return;
+        }
+        if (resolved == null || typeof resolved !== "object") return;
+        const value = (resolved as ResolveObject)[second];
+        if (Array.isArray(value)) {
+            for (let i = 0; i < value.length; i++) {
+                const entry = value[i] as ResolveValue;
+                if (entry == null || typeof entry !== "object") continue;
+                const leaf = (entry as ResolveObject)[third];
+                if (Array.isArray(leaf)) continue;
+                visit(leaf as ResolveValue);
+            }
+            return;
+        }
+        if (value == null || typeof value !== "object") return;
+        const leaf = (value as ResolveObject)[third];
+        if (Array.isArray(leaf)) {
+            for (let i = 0; i < leaf.length; i++) {
+                visit(leaf[i] as ResolveValue);
+            }
+            return;
+        }
+        visit(leaf as ResolveValue);
         return;
     }
 
@@ -613,6 +909,80 @@ function everyResolvedWithSegments(
         return predicate(resolved as ResolveValue);
     }
 
+    if (segments.length === 2) {
+        const first = segments[0]!;
+        const second = segments[1]!;
+        const resolved = (obj as ResolveObject)[first];
+        let found = false;
+        if (Array.isArray(resolved)) {
+            for (let i = 0; i < resolved.length; i++) {
+                const entry = resolved[i] as ResolveValue;
+                if (entry == null || typeof entry !== "object") continue;
+                const value = (entry as ResolveObject)[second];
+                if (Array.isArray(value)) continue;
+                found = true;
+                if (!predicate(value as ResolveValue)) return false;
+            }
+            return found;
+        }
+        if (resolved == null || typeof resolved !== "object") return false;
+        const value = (resolved as ResolveObject)[second];
+        if (Array.isArray(value)) {
+            if (value.length === 0) return false;
+            for (let i = 0; i < value.length; i++) {
+                found = true;
+                if (!predicate(value[i] as ResolveValue)) return false;
+            }
+            return found;
+        }
+        return predicate(value as ResolveValue);
+    }
+
+    if (segments.length === 3) {
+        const first = segments[0]!;
+        const second = segments[1]!;
+        const third = segments[2]!;
+        const resolved = (obj as ResolveObject)[first];
+        let found = false;
+        if (Array.isArray(resolved)) {
+            for (let i = 0; i < resolved.length; i++) {
+                const entry = resolved[i] as ResolveValue;
+                if (entry == null || typeof entry !== "object") continue;
+                const value = (entry as ResolveObject)[second];
+                if (Array.isArray(value)) continue;
+                if (value == null || typeof value !== "object") continue;
+                const leaf = (value as ResolveObject)[third];
+                if (Array.isArray(leaf)) continue;
+                found = true;
+                if (!predicate(leaf as ResolveValue)) return false;
+            }
+            return found;
+        }
+        if (resolved == null || typeof resolved !== "object") return false;
+        const value = (resolved as ResolveObject)[second];
+        if (Array.isArray(value)) {
+            for (let i = 0; i < value.length; i++) {
+                const entry = value[i] as ResolveValue;
+                if (entry == null || typeof entry !== "object") continue;
+                const leaf = (entry as ResolveObject)[third];
+                if (Array.isArray(leaf)) continue;
+                found = true;
+                if (!predicate(leaf as ResolveValue)) return false;
+            }
+            return found;
+        }
+        if (value == null || typeof value !== "object") return false;
+        const leaf = (value as ResolveObject)[third];
+        if (Array.isArray(leaf)) {
+            if (leaf.length === 0) return false;
+            for (let i = 0; i < leaf.length; i++) {
+                if (!predicate(leaf[i] as ResolveValue)) return false;
+            }
+            return true;
+        }
+        return predicate(leaf as ResolveValue);
+    }
+
     let current: ResolveValue[] = [obj as ResolveValue];
     let next: ResolveValue[] = [];
     let seenArray = false;
@@ -664,6 +1034,11 @@ function everyResolvedWithSegments(
 }
 
 function pathExistsWithSegments(obj: ResolveObject, segments: string[]): boolean {
+    if (segments.length === 1) {
+        const segment = segments[0]!;
+        if (obj == null || typeof obj !== "object") return false;
+        return Object.prototype.hasOwnProperty.call(obj as ResolveObject, segment);
+    }
     let current: ResolveValue[] = [obj as ResolveValue];
     let next: ResolveValue[] = [];
     let seenArray = false;
@@ -920,9 +1295,18 @@ export class FilterEngine<T extends Record<string, unknown>> {
 
     private applyPipeline(): T[] {
         const predicate = this.compile();
+        const predicateCount = this.predicates.length;
         const hasOrder = this.orders.length > 0;
         const limitCount = this.limitCount;
         const offsetCount = this.offsetCount;
+        if (predicateCount === 0) {
+            if (!hasOrder) {
+                const start = offsetCount > 0 ? offsetCount : 0;
+                if (limitCount === null) return start > 0 ? this.data.slice(start) : this.data.slice();
+                if (limitCount <= 0) return [];
+                return this.data.slice(start, start + limitCount);
+            }
+        }
 
         if (!hasOrder && (limitCount !== null || offsetCount > 0)) {
             const result: T[] = [];
@@ -945,13 +1329,13 @@ export class FilterEngine<T extends Record<string, unknown>> {
             return result;
         }
 
-        const filtered: T[] = [];
-        for (let i = 0; i < this.data.length; i++) {
-            const item = this.data[i]!;
-            if (predicate(item)) filtered.push(item);
-        }
-
         if (!hasOrder) {
+            const filtered: T[] = [];
+            for (let i = 0; i < this.data.length; i++) {
+                const item = this.data[i]!;
+                if (predicate(item)) filtered.push(item);
+            }
+
             if (offsetCount > 0 || limitCount !== null) {
                 const start = offsetCount > 0 ? offsetCount : 0;
                 const end = limitCount === null ? filtered.length : start + limitCount;
@@ -962,22 +1346,114 @@ export class FilterEngine<T extends Record<string, unknown>> {
         }
 
         const orderCount = this.orders.length;
-        const entries: Orderable<T>[] = new Array(filtered.length);
-        for (let i = 0; i < filtered.length; i++) {
-            const item = filtered[i]!;
+        const compare = createComparator<T>(this.orders);
+
+        if (orderCount === 1 || orderCount === 2 || orderCount === 3) {
+            const entries: (Orderable1<T> | Orderable2<T> | Orderable3<T>)[] = [];
+            for (let i = 0; i < this.data.length; i++) {
+                const item = this.data[i]!;
+                if (!predicate(item)) continue;
+                if (orderCount === 1) {
+                    const order0 = this.orders[0]!;
+                    entries.push({
+                        item,
+                        index: entries.length,
+                        k0: resolveOrderValueWithSegments(item as ResolveObject, order0.segments, order0.resolve),
+                    } as Orderable1<T>);
+                } else if (orderCount === 2) {
+                    const order0 = this.orders[0]!;
+                    const order1 = this.orders[1]!;
+                    entries.push({
+                        item,
+                        index: entries.length,
+                        k0: resolveOrderValueWithSegments(item as ResolveObject, order0.segments, order0.resolve),
+                        k1: resolveOrderValueWithSegments(item as ResolveObject, order1.segments, order1.resolve),
+                    } as Orderable2<T>);
+                } else {
+                    const order0 = this.orders[0]!;
+                    const order1 = this.orders[1]!;
+                    const order2 = this.orders[2]!;
+                    entries.push({
+                        item,
+                        index: entries.length,
+                        k0: resolveOrderValueWithSegments(item as ResolveObject, order0.segments, order0.resolve),
+                        k1: resolveOrderValueWithSegments(item as ResolveObject, order1.segments, order1.resolve),
+                        k2: resolveOrderValueWithSegments(item as ResolveObject, order2.segments, order2.resolve),
+                    } as Orderable3<T>);
+                }
+            }
+
+            const start = offsetCount > 0 ? offsetCount : 0;
+            const end = limitCount === null ? entries.length : start + limitCount;
+            if (start >= entries.length) return [];
+
+            if (limitCount !== null && limitCount > 0) {
+                const desired = start + limitCount;
+                if (desired > 0 && desired < entries.length) {
+                    const topCount = desired;
+                    const heap: (Orderable1<T> | Orderable2<T> | Orderable3<T>)[] = [];
+                    for (let i = 0; i < entries.length; i++) {
+                        const entry = entries[i]!;
+                        if (heap.length < topCount) {
+                            heapPush(heap, entry, compare);
+                        } else if (compare(entry, heap[0]!) < 0) {
+                            heapReplaceRoot(heap, entry, compare);
+                        }
+                    }
+                    heap.sort(compare);
+                    const result: T[] = [];
+                    const last = end < heap.length ? end : heap.length;
+                    for (let i = start; i < last; i++) result.push(heap[i]!.item);
+                    return result;
+                }
+            }
+
+            entries.sort(compare);
+            const result: T[] = [];
+            const last = end < entries.length ? end : entries.length;
+            for (let i = start; i < last; i++) result.push(entries[i]!.item);
+            return result;
+        }
+
+        const entries: OrderableN<T>[] = [];
+        for (let i = 0; i < this.data.length; i++) {
+            const item = this.data[i]!;
+            if (!predicate(item)) continue;
             const keys = new Array<SortKey | null>(orderCount);
             for (let j = 0; j < orderCount; j++) {
                 const order = this.orders[j]!;
                 keys[j] = resolveOrderValueWithSegments(item as ResolveObject, order.segments, order.resolve);
             }
-            entries[i] = { item, index: i, keys };
+            entries.push({ item, index: entries.length, keys });
         }
-
-        entries.sort(createComparator(this.orders));
 
         const start = offsetCount > 0 ? offsetCount : 0;
         const end = limitCount === null ? entries.length : start + limitCount;
         if (start >= entries.length) return [];
+
+        if (limitCount !== null && limitCount > 0) {
+            const desired = start + limitCount;
+            if (desired > 0 && desired < entries.length) {
+                const topCount = desired;
+                const heap: OrderableN<T>[] = [];
+                for (let i = 0; i < entries.length; i++) {
+                    const entry = entries[i]!;
+                    if (heap.length < topCount) {
+                        heapPush(heap, entry, compare);
+                    } else if (compare(entry, heap[0]!) < 0) {
+                        heapReplaceRoot(heap, entry, compare);
+                    }
+                }
+                heap.sort(compare);
+                const result: T[] = [];
+                const last = end < heap.length ? end : heap.length;
+                for (let i = start; i < last; i++) result.push(heap[i]!.item);
+                return result;
+            }
+        }
+
+        entries.sort(compare);
+
         const result: T[] = [];
         const last = end < entries.length ? end : entries.length;
         for (let i = start; i < last; i++) {
@@ -1013,6 +1489,7 @@ export class FilterEngine<T extends Record<string, unknown>> {
     ): PaginationCursor<T> {
         const data = this.data;
         const length = data.length;
+        const predicateCount = this.predicates.length;
         const history: number[] = [];
         let scanIndex = 0;
         let matchedCount = 0;
@@ -1020,16 +1497,24 @@ export class FilterEngine<T extends Record<string, unknown>> {
         let cachedTotal: number | undefined;
 
         if (totalMode === "full") {
-            let total = 0;
-            for (let i = 0; i < length; i++) {
-                if (predicate(data[i]!)) total++;
+            if (predicateCount === 0) {
+                cachedTotal = length;
+            } else {
+                let total = 0;
+                for (let i = 0; i < length; i++) {
+                    if (predicate(data[i]!)) total++;
+                }
+                cachedTotal = total;
             }
-            cachedTotal = total;
         }
 
         const totalFn = () => {
             if (totalMode === "none") return undefined;
             if (cachedTotal !== undefined) return cachedTotal;
+            if (predicateCount === 0) {
+                cachedTotal = length;
+                return cachedTotal;
+            }
             let total = 0;
             for (let i = 0; i < length; i++) {
                 if (predicate(data[i]!)) total++;
@@ -1072,9 +1557,14 @@ export class FilterEngine<T extends Record<string, unknown>> {
             if (matchedCount > targetMatched) {
                 restorePageStart(targetPage);
             } else if (matchedCount < targetMatched) {
-                while (matchedCount < targetMatched && scanIndex < length) {
-                    const item = data[scanIndex++]!;
-                    if (predicate(item)) matchedCount++;
+                if (predicateCount === 0) {
+                    scanIndex = targetMatched;
+                    matchedCount = targetMatched;
+                } else {
+                    while (matchedCount < targetMatched && scanIndex < length) {
+                        const item = data[scanIndex++]!;
+                        if (predicate(item)) matchedCount++;
+                    }
                 }
             }
 
@@ -1082,11 +1572,18 @@ export class FilterEngine<T extends Record<string, unknown>> {
             buffer.length = 0;
 
             let collected = 0;
-            while (scanIndex < length && collected < pageSize) {
-                const item = data[scanIndex++]!;
-                if (!predicate(item)) continue;
-                buffer[collected++] = item;
-                matchedCount++;
+            if (predicateCount === 0) {
+                while (scanIndex < length && collected < pageSize) {
+                    buffer[collected++] = data[scanIndex++]!;
+                    matchedCount++;
+                }
+            } else {
+                while (scanIndex < length && collected < pageSize) {
+                    const item = data[scanIndex++]!;
+                    if (!predicate(item)) continue;
+                    buffer[collected++] = item;
+                    matchedCount++;
+                }
             }
 
             if (history.length < targetPage) history.push(pageStart);
@@ -1103,28 +1600,55 @@ export class FilterEngine<T extends Record<string, unknown>> {
         startPage: number,
         totalMode: PaginationTotalMode
     ): PaginationCursor<T> {
-        const filtered: T[] = [];
         const data = this.data;
+        const orderCount = this.orders.length;
+        const compare = createComparator<T>(this.orders);
+        const predicateCount = this.predicates.length;
+
+        const entries: Orderable<T>[] = [];
         for (let i = 0; i < data.length; i++) {
             const item = data[i]!;
-            if (predicate(item)) filtered.push(item);
-        }
-
-        const orderCount = this.orders.length;
-        const entries: Orderable<T>[] = new Array(filtered.length);
-        for (let i = 0; i < filtered.length; i++) {
-            const item = filtered[i]!;
-            const keys = new Array<SortKey | null>(orderCount);
-            for (let j = 0; j < orderCount; j++) {
-                const order = this.orders[j]!;
-                keys[j] = resolveOrderValueWithSegments(item as ResolveObject, order.segments, order.resolve);
+            if (predicateCount > 0 && !predicate(item)) continue;
+            if (orderCount === 1) {
+                const order0 = this.orders[0]!;
+                entries.push({
+                    item,
+                    index: entries.length,
+                    k0: resolveOrderValueWithSegments(item as ResolveObject, order0.segments, order0.resolve),
+                } as Orderable1<T>);
+            } else if (orderCount === 2) {
+                const order0 = this.orders[0]!;
+                const order1 = this.orders[1]!;
+                entries.push({
+                    item,
+                    index: entries.length,
+                    k0: resolveOrderValueWithSegments(item as ResolveObject, order0.segments, order0.resolve),
+                    k1: resolveOrderValueWithSegments(item as ResolveObject, order1.segments, order1.resolve),
+                } as Orderable2<T>);
+            } else if (orderCount === 3) {
+                const order0 = this.orders[0]!;
+                const order1 = this.orders[1]!;
+                const order2 = this.orders[2]!;
+                entries.push({
+                    item,
+                    index: entries.length,
+                    k0: resolveOrderValueWithSegments(item as ResolveObject, order0.segments, order0.resolve),
+                    k1: resolveOrderValueWithSegments(item as ResolveObject, order1.segments, order1.resolve),
+                    k2: resolveOrderValueWithSegments(item as ResolveObject, order2.segments, order2.resolve),
+                } as Orderable3<T>);
+            } else {
+                const keys = new Array<SortKey | null>(orderCount);
+                for (let j = 0; j < orderCount; j++) {
+                    const order = this.orders[j]!;
+                    keys[j] = resolveOrderValueWithSegments(item as ResolveObject, order.segments, order.resolve);
+                }
+                entries.push({ item, index: entries.length, keys } as OrderableN<T>);
             }
-            entries[i] = { item, index: i, keys };
         }
 
-        entries.sort(createComparator(this.orders));
+        entries.sort(compare);
 
-        const total = filtered.length;
+        const total = entries.length;
         const cursor: PaginationCursor<T> = {
             data: [],
             page: startPage > 0 ? startPage : 1,
@@ -1171,6 +1695,28 @@ export class FilterEngine<T extends Record<string, unknown>> {
         if (this.orders.length > 0) {
             const items = this.applyPipeline();
             return this.groupItems(items, segments, convert) as Map<GroupKey<T, P>, T[]>;
+        }
+
+        if (this.predicates.length === 0) {
+            const result = new Map<GroupKeyValue, T[]>();
+            const limitCount = this.limitCount;
+            const offsetCount = this.offsetCount;
+            const start = offsetCount > 0 ? offsetCount : 0;
+            const max = limitCount === null ? Number.POSITIVE_INFINITY : limitCount;
+            if (max <= 0) return result as Map<GroupKey<T, P>, T[]>;
+            const end = max === Number.POSITIVE_INFINITY ? this.data.length : start + max;
+            const last = end < this.data.length ? end : this.data.length;
+            for (let i = start; i < last; i++) {
+                const item = this.data[i]!;
+                forEachResolvedWithSegments(item as ResolveObject, segments, (value) => {
+                    const key = convert(value);
+                    if (key === null || key === undefined) return;
+                    const bucket = result.get(key);
+                    if (bucket) bucket.push(item);
+                    else result.set(key, [item]);
+                });
+            }
+            return result as Map<GroupKey<T, P>, T[]>;
         }
 
         const predicate = this.compile();
@@ -1538,6 +2084,7 @@ export class FilterEngine<T extends Record<string, unknown>> {
         field: P,
         values: PathValue<T, P>[]
     ): FilterEngine<T> {
+        if (values.length === 0) return this.andPredicate(() => false);
         const valueSet = new Set(values as ResolveValue[]);
         const segments = getSegments(this.cache, String(field));
         return this.andPredicate(item =>
@@ -1553,6 +2100,7 @@ export class FilterEngine<T extends Record<string, unknown>> {
         field: P,
         values: PathValue<T, P>[]
     ): FilterEngine<T> {
+        if (values.length === 0) return this.andPredicate(() => true);
         const valueSet = new Set(values as ResolveValue[]);
         const segments = getSegments(this.cache, String(field));
         return this.andPredicate(item =>
@@ -1725,7 +2273,10 @@ export class FilterEngine<T extends Record<string, unknown>> {
         return this.andPredicate(item => {
             return someResolvedWithSegments(item as ResolveObject, segments, (candidate) => {
                 if (Array.isArray(candidate)) {
-                    return (candidate as ArrayPathItem<T, P>[]).some(nestedPredicate);
+                    for (let i = 0; i < candidate.length; i++) {
+                        if (nestedPredicate(candidate[i] as ArrayPathItem<T, P>)) return true;
+                    }
+                    return false;
                 }
                 if (candidate && typeof candidate === "object") {
                     return nestedPredicate(candidate as ArrayPathItem<T, P>);

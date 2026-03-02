@@ -147,6 +147,16 @@ why?
 - small but measurable gain in tight filtering loops
 
 
+### no-predicate shortcut
+
+when no predicates exist, we skip predicate calls and slice directly.
+
+why?
+
+- avoids unnecessary branching
+- keeps pagination + grouping fast in the zero-filter case
+
+
 ### limit/offset fast path
 
 limit/offset without ordering uses a streaming filter with early exit.
@@ -157,6 +167,36 @@ why?
 - breaks early once `offset + limit` is satisfied
 - keeps hot loop tight
 
+
+
+### top-k selection for ordered limit/offset
+
+when ordering + limit/offset is used, we keep a bounded heap for the smallest `offset + limit` items.
+
+why?
+
+- avoids full sort when you only need a small window
+- keeps stable ordering via the same comparator + index tiebreaks
+
+
+### order key specialization (1–3 keys)
+
+ordering with 1–3 keys stores keys as fields instead of an array.
+
+why?
+
+- fewer allocations per item
+- faster comparator access in hot sorts
+
+
+### short-path resolver fast paths
+
+paths with 1–3 segments use dedicated loops instead of the generic buffer walk.
+
+why?
+
+- fewer allocations in hot resolves
+- fewer branches for the most common path shapes
 
 
 ### pre-specialized comparison predicates

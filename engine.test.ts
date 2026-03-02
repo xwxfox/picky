@@ -706,6 +706,298 @@ describe("FilterEngine fast - extreme break tests", () => {
             .map(item => item.id);
         expect(result).toEqual([2]);
     });
+
+    it("ignores second array segment for direct path queries", () => {
+        const equalsResult = makeEngine()
+            // @ts-expect-error - this path violates one-array rule
+            .equals("Logs.tags", "x")
+            .result()
+            .map(item => item.id);
+        expect(equalsResult).toEqual([]);
+
+        const existsResult = makeEngine()
+            // @ts-expect-error - this path violates one-array rule
+            .pathExists("Logs.tags")
+            .result()
+            .map(item => item.id);
+        expect(existsResult).toEqual([1, 2, 4]);
+    });
+});
+
+describe("FilterEngine fast - order stability and offsets", () => {
+    it("keeps stable order when primary keys tie", () => {
+        const stableData = [
+            { id: 1, score: 5, name: "b" },
+            { id: 2, score: 5, name: "a" },
+            { id: 3, score: 5, name: "c" },
+        ];
+
+        const result = FilterEngine.from(stableData)
+            .orderBy("score")
+            .result()
+            .map(item => item.id);
+        expect(result).toEqual([1, 2, 3]);
+    });
+
+    it("applies multi-key ordering with stable ties", () => {
+        const items = [
+            { id: 1, score: 1, name: "b", label: "z" },
+            { id: 2, score: 1, name: "b", label: "a" },
+            { id: 3, score: 1, name: "a", label: "z" },
+            { id: 4, score: 2, name: "a", label: "a" },
+        ];
+
+        const result = FilterEngine.from(items)
+            .orderBy("score")
+            .thenBy("name")
+            .thenBy("label")
+            .result()
+            .map(item => item.id);
+        expect(result).toEqual([3, 2, 1, 4]);
+    });
+
+    it("respects null ordering with stable ties", () => {
+        const items = [
+            { id: 1, name: "b" },
+            { id: 2, name: null },
+            { id: 3, name: "a" },
+            { id: 4, name: null },
+        ];
+
+        const first = FilterEngine.from(items)
+            .orderBy("name", { nulls: "first" })
+            .result()
+            .map(item => item.id);
+        expect(first).toEqual([2, 4, 3, 1]);
+
+        const last = FilterEngine.from(items)
+            .orderBy("name")
+            .result()
+            .map(item => item.id);
+        expect(last).toEqual([3, 1, 2, 4]);
+    });
+
+    it("keeps offset+limit consistent with full sort", () => {
+        const items: Array<{ id: number; score: number; name: string | null }> = [];
+        for (let i = 0; i < 40; i++) {
+            items.push({ id: i, score: i % 5, name: i % 7 === 0 ? null : `n${i % 3}` });
+        }
+
+        const baseline = [...items]
+            .map((item, index) => ({ item, index }))
+            .sort((a, b) => {
+                const aKey = a.item.score;
+                const bKey = b.item.score;
+                if (aKey !== bKey) return aKey - bKey;
+                if (a.item.name === b.item.name) return a.index - b.index;
+                if (a.item.name === null) return 1;
+                if (b.item.name === null) return -1;
+                return a.item.name < b.item.name ? -1 : a.item.name > b.item.name ? 1 : a.index - b.index;
+            })
+            .map(entry => entry.item.id);
+
+        const result = FilterEngine.from(items)
+            .orderBy("score")
+            .thenBy("name")
+            .offset(5)
+            .limit(10)
+            .result()
+            .map(item => item.id);
+        expect(result).toEqual(baseline.slice(5, 15));
+    });
+});
+
+describe("FilterEngine fast - segment fast paths", () => {
+    it("handles two- and three-segment paths consistently", () => {
+        const result = makeEngine()
+            .equals("HandledBy.SalesRep", "NHR")
+            .result()
+            .map(item => item.id);
+        expect(result).toEqual([1, 4]);
+
+        const nestedResult = makeEngine()
+            .equals("meta.owner.name", "Bob")
+            .result()
+            .map(item => item.id);
+        expect(nestedResult).toEqual([2]);
+    });
+
+    it("matches when leaf is an array at segment 2", () => {
+        const result = makeEngine()
+            .equals("metrics.values", 2)
+            .result()
+            .map(item => item.id);
+        expect(result).toEqual([1]);
+    });
+});
+
+describe("FilterEngine fast - large randomized dataset", () => {
+    it("keeps ordering and filtering consistent on 12k items", () => {
+        type LargeItem = {
+            id: number;
+            active: boolean;
+            score: number;
+            name: string | null;
+            created: Date | string;
+            meta: {
+                owner: {
+                    name: string;
+                    nickname?: string | null;
+                };
+            };
+            Logs: Array<{ type: string; tags: string[]; when: Date | string }>;
+            flags: string[];
+        };
+
+        const mulberry32 = (seed: number) => {
+            let t = seed;
+            return () => {
+                t += 0x6D2B79F5;
+                let value = t;
+                value = Math.imul(value ^ (value >>> 15), value | 1);
+                value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
+                return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
+            };
+        };
+
+        const rng = mulberry32(1337);
+        const alphabet = "abcdefghijklmnopqrstuvwxyz";
+        const randomInt = (max: number) => Math.floor(rng() * max);
+        const randomString = (len: number) => {
+            let out = "";
+            for (let i = 0; i < len; i++) {
+                out += alphabet[randomInt(alphabet.length)]!;
+            }
+            return out;
+        };
+
+        const ownerNames = ["Alice", "Bob", "Cara", "Dee", "Eli"];
+        const logTypes = ["WARN", "INFO", "ERROR"];
+        const tags = ["red", "green", "blue", "amber"];
+
+        const data: LargeItem[] = [];
+        for (let i = 0; i < 12000; i++) {
+            const baseName = i % 7 === 0 ? `ab${randomString(4)}` : randomString(6);
+            const name = i % 31 === 0 ? null : baseName;
+            const score = i % 97 === 0 ? Number.NaN : randomInt(50);
+            const created = i % 2 === 0
+                ? new Date(2024, 0, (i % 28) + 1)
+                : `2024-01-${String((i % 28) + 1).padStart(2, "0")}T00:00:00.000Z`;
+            const owner = ownerNames[randomInt(ownerNames.length)]!;
+            const nick = rng() > 0.8 ? `${owner[0]}${randomInt(9)}` : null;
+            const logCount = randomInt(3);
+            const Logs: Array<{ type: string; tags: string[]; when: Date | string }> = [];
+            for (let j = 0; j < logCount; j++) {
+                const type = logTypes[randomInt(logTypes.length)]!;
+                const tagCount = randomInt(3);
+                const logTags: string[] = [];
+                for (let k = 0; k < tagCount; k++) {
+                    logTags.push(tags[randomInt(tags.length)]!);
+                }
+                const when = j % 2 === 0
+                    ? new Date(2024, 0, (i % 28) + 1)
+                    : `2024-01-${String((i % 28) + 1).padStart(2, "0")}T00:00:00.000Z`;
+                Logs.push({ type, tags: logTags, when });
+            }
+            const flagCount = randomInt(3);
+            const flags: string[] = [];
+            for (let j = 0; j < flagCount; j++) {
+                flags.push(tags[randomInt(tags.length)]!);
+            }
+
+            data.push({
+                id: i,
+                active: i % 2 === 0,
+                score,
+                name,
+                created,
+                meta: { owner: { name: owner, nickname: nick } },
+                Logs,
+                flags,
+            });
+        }
+
+        const engineResult = FilterEngine.from(data)
+            .equals("active", true)
+            .greaterThanOrEqual("score", 20)
+            .contains("name", "ab", true)
+            .orderBy("score")
+            .thenBy("name")
+            .offset(25)
+            .limit(50)
+            .result()
+            .map(item => item.id);
+
+        const compareNullable = (
+            left: number | string | null,
+            right: number | string | null,
+            direction: 1 | -1,
+            nullsFirst: boolean
+        ) => {
+            const leftNull = left === null;
+            const rightNull = right === null;
+            if (leftNull || rightNull) {
+                if (leftNull && rightNull) return 0;
+                if (leftNull) return nullsFirst ? -1 : 1;
+                return nullsFirst ? 1 : -1;
+            }
+            if (typeof left === "number") return (left - (right as number)) * direction;
+            if (typeof left === "string") return (left < (right as string) ? -1 : left > (right as string) ? 1 : 0) * direction;
+            return 0;
+        };
+
+        const baseline = data
+            .map((item, index) => ({ item, index }))
+            .filter(({ item }) => {
+                if (!item.active) return false;
+                if (!(typeof item.score === "number") || Number.isNaN(item.score)) return false;
+                if (item.score < 20) return false;
+                if (typeof item.name !== "string") return false;
+                return item.name.toLowerCase().includes("ab");
+            })
+            .sort((a, b) => {
+                const leftScore = Number.isNaN(a.item.score) ? null : a.item.score;
+                const rightScore = Number.isNaN(b.item.score) ? null : b.item.score;
+                const diff0 = compareNullable(leftScore, rightScore, 1, false);
+                if (diff0 !== 0) return diff0;
+                const leftName = typeof a.item.name === "string" ? a.item.name : null;
+                const rightName = typeof b.item.name === "string" ? b.item.name : null;
+                const diff1 = compareNullable(leftName, rightName, 1, false);
+                if (diff1 !== 0) return diff1;
+                return a.index - b.index;
+            })
+            .slice(25, 75)
+            .map(({ item }) => item.id);
+
+        expect(engineResult).toEqual(baseline);
+
+        const nestedResult = FilterEngine.from(data)
+            .nested("Logs", q => q.equals("type", "WARN"))
+            .result()
+            .map(item => item.id);
+
+        const nestedBaseline = data
+            .filter(item => item.Logs.some(log => log.type === "WARN"))
+            .map(item => item.id);
+
+        expect(nestedResult).toEqual(nestedBaseline);
+
+        const grouped = FilterEngine.from(data)
+            .equals("active", true)
+            .groupBy("meta.owner.name");
+
+        const baselineGroups = new Map<string, number>();
+        for (const item of data) {
+            if (!item.active) continue;
+            const owner = item.meta.owner.name;
+            baselineGroups.set(owner, (baselineGroups.get(owner) ?? 0) + 1);
+        }
+
+        expect(grouped.size).toEqual(baselineGroups.size);
+        for (const [key, count] of baselineGroups) {
+            expect(grouped.get(key)?.length ?? 0).toEqual(count);
+        }
+    });
 });
 
 describe("FilterEngine fast - ordering, limiting, pagination, grouping", () => {
