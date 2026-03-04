@@ -8,6 +8,7 @@ export type QueryPlan<T> = {
     fuzzyConfig: CompiledFuzzyConfig<T> | null;
     id: string;
     predicates: Array<Predicate<T>>;
+    predicateFn: (item: T) => boolean;
     searchFilters: Array<SearchFilterState>;
     strictSearch: boolean;
     taggerConfig: CompiledTaggerConfig<T, string> | null;

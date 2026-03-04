@@ -1,4 +1,6 @@
 import type { CacheOptions, ResolveSortKey, GroupKeyValue } from "@/types";
+import type { PathAccessors } from "@/core/shared/path";
+import { createPathAccessors } from "@/core/shared/path";
 import type { ResolveValue } from "@/types/core";
 
 const isoDateRegex = /^\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?)?$/;
@@ -13,6 +15,7 @@ export type CacheState = {
     orderResolverDate: ResolveSortKey;
     parseIsoDate: (value: string) => number | null;
     pathSegmentsCache: Map<string, Array<string>>;
+    pathAccessorsCache: Map<string, PathAccessors>;
     searchCache: SearchCache;
 };
 
@@ -70,6 +73,7 @@ function createDateCache(cache: Map<string, number | null>, maxDateCache: number
 
 export function createCacheState(options: CacheOptions): CacheState {
     const pathSegmentsCache = new Map<string, Array<string>>();
+    const pathAccessorsCache = new Map<string, PathAccessors>();
     const dateCache = new Map<string, number | null>();
     const searchCache: SearchCache = {
         maskCache: new Map<string, number>(),
@@ -91,6 +95,7 @@ export function createCacheState(options: CacheOptions): CacheState {
         orderResolverDate,
         parseIsoDate,
         pathSegmentsCache,
+        pathAccessorsCache,
         searchCache,
     };
 }
@@ -117,6 +122,19 @@ export function getSegments(cache: CacheState, path: string): Array<string> {
         if (firstKey !== undefined) {cache.pathSegmentsCache.delete(firstKey);}
     }
     return segments;
+}
+
+export function getPathAccessors(cache: CacheState, path: string): PathAccessors {
+    const cached = cache.pathAccessorsCache.get(path);
+    if (cached) {return cached;}
+    const segments = getSegments(cache, path);
+    const accessors = createPathAccessors(segments);
+    cache.pathAccessorsCache.set(path, accessors);
+    while (cache.pathAccessorsCache.size > cache.maxPathCache) {
+        const firstKey = cache.pathAccessorsCache.keys().next().value;
+        if (firstKey !== undefined) {cache.pathAccessorsCache.delete(firstKey);}
+    }
+    return accessors;
 }
 
 function createOrderResolver(): ResolveSortKey {

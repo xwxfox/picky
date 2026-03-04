@@ -13,8 +13,8 @@ import type { CompiledTaggerConfig } from "@/core/search/runtime";
 import type { GroupKeyValue } from "@/types/core";
 import { ExecutionEngine } from "@/core/engine/executor";
 import { executeSearchPipeline } from "@/core/search/runtime";
-import { getSegments } from "@/core/shared/cache";
-import { forEachResolvedWithSegments, resolveOrderValueWithSegments } from "@/core/shared/path";
+import { getPathAccessors } from "@/core/shared/cache";
+import { resolveOrderValueWithSegments } from "@/core/shared/path";
 import { createComparator } from "@/core/engine/compare";
 import type { Orderable1, Orderable2, Orderable3, OrderableN, Orderable } from "@/core/engine/compare";
 
@@ -77,27 +77,27 @@ export class EgressEngine<
     }
 
     orderBy<P extends SortablePaths<T>>(field: P, options?: OrderOptions): EgressEngine<T, C> {
-        const segments = getSegments(this.state.plan.cache, String(field));
+        const accessors = getPathAccessors(this.state.plan.cache, String(field));
         const direction = options?.direction === "desc" ? -1 : 1;
         const nullsFirst = options?.nulls === "first";
         const order: OrderSpec = {
             direction,
             nullsFirst,
             resolve: this.state.plan.cache.orderResolver,
-            segments,
+            segments: accessors.segments,
         };
         return this.clone({ orders: [...this.state.orders, order] });
     }
 
     orderByDate<P extends DatePaths<T>>(field: P, options?: OrderOptions): EgressEngine<T, C> {
-        const segments = getSegments(this.state.plan.cache, String(field));
+        const accessors = getPathAccessors(this.state.plan.cache, String(field));
         const direction = options?.direction === "desc" ? -1 : 1;
         const nullsFirst = options?.nulls === "first";
         const order: OrderSpec = {
             direction,
             nullsFirst,
             resolve: this.state.plan.cache.orderResolverDate,
-            segments,
+            segments: accessors.segments,
         };
         return this.clone({ orders: [...this.state.orders, order] });
     }
@@ -145,49 +145,142 @@ export class EgressEngine<
         const orderCount = this.state.orders.length;
         const compare = createComparator<T>(this.state.orders);
         const entries: Array<Orderable<T>> = [];
-
-        for (let i = 0; i < filtered.length; i++) {
-            const item = filtered[i]!;
+        const pushEntry = (item: T, index: number) => {
             if (orderCount === 1) {
                 const order0 = this.state.orders[0]!;
                 entries.push({
-                    index: entries.length,
+                    index,
                     item,
                     k0: resolveOrderValueWithSegments(item as ResolveObject, order0.segments, order0.resolve),
                 } as Orderable1<T>);
-            } else if (orderCount === 2) {
+                return;
+            }
+            if (orderCount === 2) {
                 const order0 = this.state.orders[0]!;
                 const order1 = this.state.orders[1]!;
                 entries.push({
-                    index: entries.length,
+                    index,
                     item,
                     k0: resolveOrderValueWithSegments(item as ResolveObject, order0.segments, order0.resolve),
                     k1: resolveOrderValueWithSegments(item as ResolveObject, order1.segments, order1.resolve),
                 } as Orderable2<T>);
-            } else if (orderCount === 3) {
+                return;
+            }
+            if (orderCount === 3) {
                 const order0 = this.state.orders[0]!;
                 const order1 = this.state.orders[1]!;
                 const order2 = this.state.orders[2]!;
                 entries.push({
-                    index: entries.length,
+                    index,
                     item,
                     k0: resolveOrderValueWithSegments(item as ResolveObject, order0.segments, order0.resolve),
                     k1: resolveOrderValueWithSegments(item as ResolveObject, order1.segments, order1.resolve),
                     k2: resolveOrderValueWithSegments(item as ResolveObject, order2.segments, order2.resolve),
                 } as Orderable3<T>);
-            } else {
+                return;
+            }
+            const keys = new Array<SortKey | null>(orderCount);
+            for (let j = 0; j < orderCount; j++) {
+                const order = this.state.orders[j]!;
+                keys[j] = resolveOrderValueWithSegments(item as ResolveObject, order.segments, order.resolve);
+            }
+            entries.push({ index, item, keys } as OrderableN<T>);
+        };
+
+        const start = this.state.offsetCount > 0 ? this.state.offsetCount : 0;
+        const limitCount = this.state.limitCount;
+        const needsHeap = limitCount !== null && limitCount > 0 && filtered.length > limitCount;
+        if (needsHeap) {
+            const heapLimit = start + limitCount;
+            if (heapLimit <= 0) {return [] as Array<T>;}
+            const heap: Array<Orderable<T>> = [];
+            const insertCandidate = (candidate: Orderable<T>) => {
+                if (heap.length < heapLimit) {
+                    heap.push(candidate);
+                    let idx = heap.length - 1;
+                    while (idx > 0) {
+                        const parent = (idx - 1) >> 1;
+                        if (compare(heap[idx]!, heap[parent]!) <= 0) {break;}
+                        const temp = heap[parent]!;
+                        heap[parent] = heap[idx]!;
+                        heap[idx] = temp;
+                        idx = parent;
+                    }
+                    return;
+                }
+                if (compare(candidate, heap[0]!) >= 0) {return;}
+                heap[0] = candidate;
+                let idx = 0;
+                const length = heap.length;
+                while (true) {
+                    const left = (idx << 1) + 1;
+                    if (left >= length) {break;}
+                    const right = left + 1;
+                    let nextIdx = left;
+                    if (right < length && compare(heap[right]!, heap[left]!) > 0) {nextIdx = right;}
+                    if (compare(heap[nextIdx]!, heap[idx]!) <= 0) {break;}
+                    const temp = heap[idx]!;
+                    heap[idx] = heap[nextIdx]!;
+                    heap[nextIdx] = temp;
+                    idx = nextIdx;
+                }
+            };
+
+            for (let i = 0; i < filtered.length; i++) {
+                const item = filtered[i]!;
+                const index = i;
+                if (orderCount === 1) {
+                    const order0 = this.state.orders[0]!;
+                    insertCandidate({
+                        index,
+                        item,
+                        k0: resolveOrderValueWithSegments(item as ResolveObject, order0.segments, order0.resolve),
+                    } as Orderable1<T>);
+                    continue;
+                }
+                if (orderCount === 2) {
+                    const order0 = this.state.orders[0]!;
+                    const order1 = this.state.orders[1]!;
+                    insertCandidate({
+                        index,
+                        item,
+                        k0: resolveOrderValueWithSegments(item as ResolveObject, order0.segments, order0.resolve),
+                        k1: resolveOrderValueWithSegments(item as ResolveObject, order1.segments, order1.resolve),
+                    } as Orderable2<T>);
+                    continue;
+                }
+                if (orderCount === 3) {
+                    const order0 = this.state.orders[0]!;
+                    const order1 = this.state.orders[1]!;
+                    const order2 = this.state.orders[2]!;
+                    insertCandidate({
+                        index,
+                        item,
+                        k0: resolveOrderValueWithSegments(item as ResolveObject, order0.segments, order0.resolve),
+                        k1: resolveOrderValueWithSegments(item as ResolveObject, order1.segments, order1.resolve),
+                        k2: resolveOrderValueWithSegments(item as ResolveObject, order2.segments, order2.resolve),
+                    } as Orderable3<T>);
+                    continue;
+                }
                 const keys = new Array<SortKey | null>(orderCount);
                 for (let j = 0; j < orderCount; j++) {
                     const order = this.state.orders[j]!;
                     keys[j] = resolveOrderValueWithSegments(item as ResolveObject, order.segments, order.resolve);
                 }
-                entries.push({ index: entries.length, item, keys } as OrderableN<T>);
+                insertCandidate({ index, item, keys } as OrderableN<T>);
             }
+
+            heap.sort(compare);
+            for (let i = 0; i < heap.length; i++) {entries.push(heap[i]!);}
+        } else {
+            for (let i = 0; i < filtered.length; i++) {
+                const item = filtered[i]!;
+                pushEntry(item, i);
+            }
+            entries.sort(compare);
         }
 
-        entries.sort(compare);
-        const start = this.state.offsetCount > 0 ? this.state.offsetCount : 0;
-        const end = this.state.limitCount === null ? entries.length : start + this.state.limitCount;
+        const end = limitCount === null ? entries.length : start + limitCount;
         const result: Array<T> = [];
         const last = end < entries.length ? end : entries.length;
         for (let i = start; i < last; i++) {result.push(entries[i]!.item);}
@@ -241,12 +334,12 @@ export class EgressEngine<
         options?: { date?: boolean }
     ): Map<GroupKey<T, P>, Array<T>> {
         const items = this.result();
-        const segments = getSegments(this.state.plan.cache, String(field));
+        const accessors = getPathAccessors(this.state.plan.cache, String(field));
         const convert = options?.date ? this.state.plan.cache.groupKeyConverterDate : this.state.plan.cache.groupKeyConverter;
         const result = new Map<GroupKeyValue, Array<T>>();
         for (let i = 0; i < items.length; i++) {
             const item = items[i]!;
-            forEachResolvedWithSegments(item as ResolveObject, segments, (value) => {
+            accessors.forEach(item as ResolveObject, (value) => {
                 const key = convert(value);
                 if (key === null || key === undefined) {return;}
                 const bucket = result.get(key);
@@ -270,6 +363,7 @@ export class EgressEngine<
         const result = executeSearchPipeline<T, SearchCapabilityState>(
             this.state.ingress.data,
             mergedPlan.predicates,
+            mergedPlan.predicateFn,
             mergedPlan.cache,
             mergedPlan.fuzzyConfig,
             mergedPlan.taggerConfig as CompiledTaggerConfig<T, AvailableTags<SearchCapabilityState>> | null,

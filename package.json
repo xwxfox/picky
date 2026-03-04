@@ -1,12 +1,21 @@
 {
   "name": "pickie",
-  "module": "index.ts",
+  "module": "src/index.ts",
+  "version": "0.0.1",
+  "author": "xwxfox",
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "test": "bun test --coverage",
     "example": "bun examples/example.ts",
     "bench": "./scripts/compare.sh",
     "lint": "oxlint --fix --type-aware",
     "typecheck": "tsgo --noEmit"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*"
   },
   "devDependencies": {
     "@nkzw/eslint-plugin": "^2.0.0",
@@ -22,5 +31,9 @@
   "peerDependencies": {
     "typescript": "^5"
   },
+  "files": [
+    "./src/*.ts",
+    "./src/**/*.ts"
+  ],
   "type": "module"
 }

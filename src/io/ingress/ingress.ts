@@ -65,6 +65,7 @@ export class IngressEngine<T extends Record<string, unknown>> {
         const state = getSharedCacheState();
         if (state) {
             state.pathSegmentsCache.clear();
+            state.pathAccessorsCache.clear();
             state.dateCache.clear();
         }
     }

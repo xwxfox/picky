@@ -1,4 +1,4 @@
-# sorting n stuff
+# sorting n stuff (added)
 We should consider adding methods for sorting, ordering, limiting etc in the engine
 
 this makes sense bc a logical next step after filtering would be stuff like that
@@ -10,7 +10,7 @@ like:
 - sort / order 
 - limit
 
-# extact predicate builder 
+# extact predicate builder  (kinda done, rest needs rework to comp)
 would be pog bc then we can make reusable chains & precompile then
 
 for this to work effeciently we would need to find a way to internally merge predicate chains so that if 

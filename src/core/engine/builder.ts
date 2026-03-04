@@ -12,12 +12,8 @@ import type {
 } from "@/types";
 import type { QueryChain } from "@/core/engine/chains/chain";
 import { hashPlanId } from "./hash";
-import { getSegments } from "@/core/shared/cache";
-import {
-    someResolvedWithSegments,
-    everyResolvedWithSegments,
-    pathExistsWithSegments,
-} from "@/core/shared/path";
+import { getPathAccessors } from "@/core/shared/cache";
+import type { PathAccessors } from "@/core/shared/path";
 import { createComparePredicate } from "@/core/engine/predicates/compare";
 import { createBetweenPredicate } from "@/core/engine/predicates/range";
 import { createDateEqualsPredicate, createDateComparePredicate, createDateBetweenPredicate } from "@/core/engine/predicates/dates";
@@ -83,6 +79,10 @@ export class QueryBuilder<
         });
     }
 
+    private getAccessors(path: string): PathAccessors {
+        return getPathAccessors(this.state.cache, path);
+    }
+
     use(chain: QueryChain<T>): QueryBuilder<T, C> {
         const plan = chain.getPlan();
         return new QueryBuilder(this.ingress, {
@@ -94,11 +94,21 @@ export class QueryBuilder<
     compilePlan(): QueryPlan<T> {
         const searchKey = `${this.state.fuzzyConfig ? "f" : "_"}${this.state.taggerConfig ? "t" : "_"}${this.state.searchFilters.length}`;
         const id = hashPlanId(this.state.predicates, searchKey);
+        const predicates = this.state.predicates;
+        const predicateFn = predicates.length === 0
+            ? () => true
+            : (item: T) => {
+                for (let i = 0; i < predicates.length; i++) {
+                    if (!predicates[i]!(item)) {return false;}
+                }
+                return true;
+            };
         return {
             cache: this.state.cache,
             fuzzyConfig: this.state.fuzzyConfig,
             id,
-            predicates: this.state.predicates,
+            predicates,
+            predicateFn,
             searchFilters: this.state.searchFilters,
             strictSearch: this.state.strictSearch,
             taggerConfig: this.state.taggerConfig,
@@ -159,157 +169,157 @@ export class QueryBuilder<
 
     // Filter operators
     equals<P extends NonDatePaths<T>>(field: P, value: PathValue<T, P>): QueryBuilder<T, C> {
-        const segments = getSegments(this.state.cache, String(field));
+        const accessors = this.getAccessors(String(field));
         const target = value as ResolveValue;
         return this.addPredicate(item =>
-            someResolvedWithSegments(item as ResolveObject, segments, (c) => c === target)
+            accessors.some(item as ResolveObject, (c) => c === target)
         );
     }
 
     notEquals<P extends NonDatePaths<T>>(field: P, value: PathValue<T, P>): QueryBuilder<T, C> {
-        const segments = getSegments(this.state.cache, String(field));
+        const accessors = this.getAccessors(String(field));
         const target = value as ResolveValue;
         return this.addPredicate(item =>
-            !someResolvedWithSegments(item as ResolveObject, segments, (c) => c === target)
+            !accessors.some(item as ResolveObject, (c) => c === target)
         );
     }
 
     greaterThan<P extends NonDatePaths<T>>(field: P, value: Extract<PathValue<T, P>, Comparable>): QueryBuilder<T, C> {
-        const segments = getSegments(this.state.cache, String(field));
+        const accessors = this.getAccessors(String(field));
         const predicate = createComparePredicate(value as ResolveValue, "gt");
-        return this.addPredicate(item => someResolvedWithSegments(item as ResolveObject, segments, predicate));
+        return this.addPredicate(item => accessors.some(item as ResolveObject, predicate));
     }
 
     greaterThanOrEqual<P extends NonDatePaths<T>>(field: P, value: Extract<PathValue<T, P>, Comparable>): QueryBuilder<T, C> {
-        const segments = getSegments(this.state.cache, String(field));
+        const accessors = this.getAccessors(String(field));
         const predicate = createComparePredicate(value as ResolveValue, "gte");
-        return this.addPredicate(item => someResolvedWithSegments(item as ResolveObject, segments, predicate));
+        return this.addPredicate(item => accessors.some(item as ResolveObject, predicate));
     }
 
     lessThan<P extends NonDatePaths<T>>(field: P, value: Extract<PathValue<T, P>, Comparable>): QueryBuilder<T, C> {
-        const segments = getSegments(this.state.cache, String(field));
+        const accessors = this.getAccessors(String(field));
         const predicate = createComparePredicate(value as ResolveValue, "lt");
-        return this.addPredicate(item => someResolvedWithSegments(item as ResolveObject, segments, predicate));
+        return this.addPredicate(item => accessors.some(item as ResolveObject, predicate));
     }
 
     lessThanOrEqual<P extends NonDatePaths<T>>(field: P, value: Extract<PathValue<T, P>, Comparable>): QueryBuilder<T, C> {
-        const segments = getSegments(this.state.cache, String(field));
+        const accessors = this.getAccessors(String(field));
         const predicate = createComparePredicate(value as ResolveValue, "lte");
-        return this.addPredicate(item => someResolvedWithSegments(item as ResolveObject, segments, predicate));
+        return this.addPredicate(item => accessors.some(item as ResolveObject, predicate));
     }
 
     between<P extends NonDatePaths<T>>(field: P, min: Extract<PathValue<T, P>, Comparable>, max: Extract<PathValue<T, P>, Comparable>): QueryBuilder<T, C> {
-        const segments = getSegments(this.state.cache, String(field));
+        const accessors = this.getAccessors(String(field));
         const predicate = createBetweenPredicate(min as ResolveValue, max as ResolveValue);
-        return this.addPredicate(item => someResolvedWithSegments(item as ResolveObject, segments, predicate));
+        return this.addPredicate(item => accessors.some(item as ResolveObject, predicate));
     }
 
     in<P extends NonDatePaths<T>>(field: P, values: Array<PathValue<T, P>>): QueryBuilder<T, C> {
         if (values.length === 0) {return this.addPredicate(() => false);}
         const valueSet = new Set(values as Array<ResolveValue>);
-        const segments = getSegments(this.state.cache, String(field));
+        const accessors = this.getAccessors(String(field));
         return this.addPredicate(item =>
-            someResolvedWithSegments(item as ResolveObject, segments, (c) => valueSet.has(c))
+            accessors.some(item as ResolveObject, (c) => valueSet.has(c))
         );
     }
 
     notIn<P extends NonDatePaths<T>>(field: P, values: Array<PathValue<T, P>>): QueryBuilder<T, C> {
         if (values.length === 0) {return this.addPredicate(() => true);}
         const valueSet = new Set(values as Array<ResolveValue>);
-        const segments = getSegments(this.state.cache, String(field));
+        const accessors = this.getAccessors(String(field));
         return this.addPredicate(item =>
-            !someResolvedWithSegments(item as ResolveObject, segments, (c) => valueSet.has(c))
+            !accessors.some(item as ResolveObject, (c) => valueSet.has(c))
         );
     }
 
     dateEquals<P extends DatePaths<T>>(field: P, value: Date | string | number): QueryBuilder<T, C> {
-        const segments = getSegments(this.state.cache, String(field));
+        const accessors = this.getAccessors(String(field));
         const predicate = createDateEqualsPredicate(this.state.cache.parseIsoDate, value);
         if (!predicate) {return this.addPredicate(() => false);}
-        return this.addPredicate(item => someResolvedWithSegments(item as ResolveObject, segments, predicate));
+        return this.addPredicate(item => accessors.some(item as ResolveObject, predicate));
     }
 
     dateAfter<P extends DatePaths<T>>(field: P, value: Date | string | number): QueryBuilder<T, C> {
-        const segments = getSegments(this.state.cache, String(field));
+        const accessors = this.getAccessors(String(field));
         const predicate = createDateComparePredicate(this.state.cache.parseIsoDate, value, "gt");
         if (!predicate) {return this.addPredicate(() => false);}
-        return this.addPredicate(item => someResolvedWithSegments(item as ResolveObject, segments, predicate));
+        return this.addPredicate(item => accessors.some(item as ResolveObject, predicate));
     }
 
     dateAfterOrEqual<P extends DatePaths<T>>(field: P, value: Date | string | number): QueryBuilder<T, C> {
-        const segments = getSegments(this.state.cache, String(field));
+        const accessors = this.getAccessors(String(field));
         const predicate = createDateComparePredicate(this.state.cache.parseIsoDate, value, "gte");
         if (!predicate) {return this.addPredicate(() => false);}
-        return this.addPredicate(item => someResolvedWithSegments(item as ResolveObject, segments, predicate));
+        return this.addPredicate(item => accessors.some(item as ResolveObject, predicate));
     }
 
     dateBefore<P extends DatePaths<T>>(field: P, value: Date | string | number): QueryBuilder<T, C> {
-        const segments = getSegments(this.state.cache, String(field));
+        const accessors = this.getAccessors(String(field));
         const predicate = createDateComparePredicate(this.state.cache.parseIsoDate, value, "lt");
         if (!predicate) {return this.addPredicate(() => false);}
-        return this.addPredicate(item => someResolvedWithSegments(item as ResolveObject, segments, predicate));
+        return this.addPredicate(item => accessors.some(item as ResolveObject, predicate));
     }
 
     dateBeforeOrEqual<P extends DatePaths<T>>(field: P, value: Date | string | number): QueryBuilder<T, C> {
-        const segments = getSegments(this.state.cache, String(field));
+        const accessors = this.getAccessors(String(field));
         const predicate = createDateComparePredicate(this.state.cache.parseIsoDate, value, "lte");
         if (!predicate) {return this.addPredicate(() => false);}
-        return this.addPredicate(item => someResolvedWithSegments(item as ResolveObject, segments, predicate));
+        return this.addPredicate(item => accessors.some(item as ResolveObject, predicate));
     }
 
     dateBetween<P extends DatePaths<T>>(field: P, min: Date | string | number, max: Date | string | number): QueryBuilder<T, C> {
-        const segments = getSegments(this.state.cache, String(field));
+        const accessors = this.getAccessors(String(field));
         const predicate = createDateBetweenPredicate(this.state.cache.parseIsoDate, min, max);
         if (!predicate) {return this.addPredicate(() => false);}
-        return this.addPredicate(item => someResolvedWithSegments(item as ResolveObject, segments, predicate));
+        return this.addPredicate(item => accessors.some(item as ResolveObject, predicate));
     }
 
     contains<P extends Paths<T>>(field: P, substring: string, ignoreCase = false): QueryBuilder<T, C> {
-        const segments = getSegments(this.state.cache, String(field));
+        const accessors = this.getAccessors(String(field));
         if (ignoreCase) {
             const target = substring.toLowerCase();
             return this.addPredicate(item =>
-                someResolvedWithSegments(item as ResolveObject, segments, (c) =>
+                accessors.some(item as ResolveObject, (c) =>
                     typeof c === "string" && c.toLowerCase().includes(target)
                 )
             );
         }
         return this.addPredicate(item =>
-            someResolvedWithSegments(item as ResolveObject, segments, (c) =>
+            accessors.some(item as ResolveObject, (c) =>
                 typeof c === "string" && c.includes(substring)
             )
         );
     }
 
     startsWith<P extends Paths<T>>(field: P, prefix: string, ignoreCase = false): QueryBuilder<T, C> {
-        const segments = getSegments(this.state.cache, String(field));
+        const accessors = this.getAccessors(String(field));
         if (ignoreCase) {
             const target = prefix.toLowerCase();
             return this.addPredicate(item =>
-                someResolvedWithSegments(item as ResolveObject, segments, (c) =>
+                accessors.some(item as ResolveObject, (c) =>
                     typeof c === "string" && c.toLowerCase().startsWith(target)
                 )
             );
         }
         return this.addPredicate(item =>
-            someResolvedWithSegments(item as ResolveObject, segments, (c) =>
+            accessors.some(item as ResolveObject, (c) =>
                 typeof c === "string" && c.startsWith(prefix)
             )
         );
     }
 
     endsWith<P extends Paths<T>>(field: P, suffix: string, ignoreCase = false): QueryBuilder<T, C> {
-        const segments = getSegments(this.state.cache, String(field));
+        const accessors = this.getAccessors(String(field));
         if (ignoreCase) {
             const target = suffix.toLowerCase();
             return this.addPredicate(item =>
-                someResolvedWithSegments(item as ResolveObject, segments, (c) =>
+                accessors.some(item as ResolveObject, (c) =>
                     typeof c === "string" && c.toLowerCase().endsWith(target)
                 )
             );
         }
         return this.addPredicate(item =>
-            someResolvedWithSegments(item as ResolveObject, segments, (c) =>
+            accessors.some(item as ResolveObject, (c) =>
                 typeof c === "string" && c.endsWith(suffix)
             )
         );
@@ -317,65 +327,64 @@ export class QueryBuilder<
 
     matches<P extends Paths<T>>(field: P, regex: RegExp): QueryBuilder<T, C> {
         const safeRegex = new RegExp(regex.source, regex.flags.replaceAll(/[gy]/g, ""));
-        const segments = getSegments(this.state.cache, String(field));
+        const accessors = this.getAccessors(String(field));
         return this.addPredicate(item =>
-            someResolvedWithSegments(item as ResolveObject, segments, (c) =>
+            accessors.some(item as ResolveObject, (c) =>
                 typeof c === "string" && safeRegex.test(c)
             )
         );
     }
 
     isNull<P extends Paths<T>>(field: P): QueryBuilder<T, C> {
-        const segments = getSegments(this.state.cache, String(field));
+        const accessors = this.getAccessors(String(field));
         return this.addPredicate(item =>
-            someResolvedWithSegments(item as ResolveObject, segments, (c) => c === null)
+            accessors.some(item as ResolveObject, (c) => c === null)
         );
     }
 
     valueNotNull<P extends Paths<T>>(field: P): QueryBuilder<T, C> {
-        const segments = getSegments(this.state.cache, String(field));
+        const accessors = this.getAccessors(String(field));
         return this.addPredicate(item =>
-            someResolvedWithSegments(item as ResolveObject, segments, (c) => c != null)
+            accessors.some(item as ResolveObject, (c) => c != null)
         );
     }
 
     pathExists<P extends Paths<T>>(field: P): QueryBuilder<T, C> {
-        const path = String(field);
-        const segments = getSegments(this.state.cache, path);
+        const accessors = this.getAccessors(String(field));
         return this.addPredicate(item =>
-            pathExistsWithSegments(item as ResolveObject, segments)
+            accessors.exists(item as ResolveObject)
         );
     }
 
     pathExistsNullable<P extends Paths<T>>(field: P): QueryBuilder<T, C> {
-        const segments = getSegments(this.state.cache, String(field));
+        const accessors = this.getAccessors(String(field));
         return this.addPredicate(item =>
-            someResolvedWithSegments(item as ResolveObject, segments, (c) => c !== undefined)
+            accessors.some(item as ResolveObject, (c) => c !== undefined)
         );
     }
 
     arraySome<P extends Paths<T>>(field: P, predicate: (value: PathValue<T, P>) => boolean): QueryBuilder<T, C> {
-        const segments = getSegments(this.state.cache, String(field));
+        const accessors = this.getAccessors(String(field));
         return this.addPredicate(item =>
-            someResolvedWithSegments(item as ResolveObject, segments, (c) =>
+            accessors.some(item as ResolveObject, (c) =>
                 predicate(c as PathValue<T, P>)
             )
         );
     }
 
     arrayEvery<P extends Paths<T>>(field: P, predicate: (value: PathValue<T, P>) => boolean): QueryBuilder<T, C> {
-        const segments = getSegments(this.state.cache, String(field));
+        const accessors = this.getAccessors(String(field));
         return this.addPredicate(item =>
-            everyResolvedWithSegments(item as ResolveObject, segments, (c) =>
+            accessors.every(item as ResolveObject, (c) =>
                 predicate(c as PathValue<T, P>)
             )
         );
     }
 
     arrayNone<P extends Paths<T>>(field: P, predicate: (value: PathValue<T, P>) => boolean): QueryBuilder<T, C> {
-        const segments = getSegments(this.state.cache, String(field));
+        const accessors = this.getAccessors(String(field));
         return this.addPredicate(item =>
-            !someResolvedWithSegments(item as ResolveObject, segments, (c) =>
+            !accessors.some(item as ResolveObject, (c) =>
                 predicate(c as PathValue<T, P>)
             )
         );
@@ -388,9 +397,9 @@ export class QueryBuilder<
         const nestedPredicate = builder(
             QueryBuilder.from(this.ingress as IngressEngine<ArrayPathItem<T, P>>)
         ).compilePlan().predicates;
-        const segments = getSegments(this.state.cache, String(field));
+        const accessors = this.getAccessors(String(field));
         return this.addPredicate(item => {
-            return someResolvedWithSegments(item as ResolveObject, segments, (c) => {
+            return accessors.some(item as ResolveObject, (c) => {
                 if (Array.isArray(c)) {
                     for (let i = 0; i < c.length; i++) {
                         for (let p = 0; p < nestedPredicate.length; p++) {
