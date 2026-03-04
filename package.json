@@ -1,7 +1,7 @@
 {
   "name": "pickie",
   "module": "src/index.ts",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "author": "xwxfox",
   "publishConfig": {
     "access": "public"
@@ -35,5 +35,10 @@
     "./src/*.ts",
     "./src/**/*.ts"
   ],
+  "repository": {
+    "url": "https://github.com/xwxfox/pickie",
+    "type": "github"
+  },
+  "description": "smol lil filter engine focussing on perf optimizations and nice sugary DX for arrays of structured objects.",
   "type": "module"
 }
