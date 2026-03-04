@@ -18,34 +18,31 @@ import { ExecutionEngine } from "@/core/engine/executor";
 import type { ResolveObject } from "@/types/core";
 
 type LogEntry = {
-    type: string;
     message: string | null;
-    tags: string[];
+    tags: Array<string>;
+    type: string;
     when: Date | string;
 };
 
 type SampleItem = {
-    id: number;
-    name: string;
-    label: string;
     active: boolean;
-    score: number;
     created: Date | string | number;
-    note?: string | null;
+    flags: Array<string>;
+    HandledBy: {
+        SalesRep: string | null;
+    };
+    id: number;
+    label: string;
+    Logs: Array<LogEntry>;
     meta: {
         owner: {
             name: string;
             nickname?: string | null;
         };
     };
-    HandledBy: {
-        SalesRep: string | null;
-    };
-    Logs: LogEntry[];
-    flags: string[];
     metrics: {
-        values: number[];
         maybe?: number | null;
+        values: Array<number>;
     };
     misc?: {
         code?: string;
@@ -53,38 +50,38 @@ type SampleItem = {
             value?: string | null;
         };
     };
+    name: string;
+    note?: string | null;
+    score: number;
 };
 
-const data: SampleItem[] = [
+const data: Array<SampleItem> = [
     {
-        id: 1,
-        name: "Alpha",
-        label: "2024-01-01",
         active: true,
-        score: 10,
         created: new Date("2024-01-01T00:00:00.000Z"),
-        note: null,
+        flags: ["red", "blue"],
+        HandledBy: {
+            SalesRep: "NHR",
+        },
+        id: 1,
+        label: "2024-01-01",
+        Logs: [
+            {
+                message: "over",
+                tags: ["x"],
+                type: "CREDIT_MAX_EXCEEDED",
+                when: "2024-01-03T00:00:00.000Z",
+            },
+        ],
         meta: {
             owner: {
                 name: "Alice",
                 nickname: null,
             },
         },
-        HandledBy: {
-            SalesRep: "NHR",
-        },
-        Logs: [
-            {
-                type: "CREDIT_MAX_EXCEEDED",
-                message: "over",
-                tags: ["x"],
-                when: "2024-01-03T00:00:00.000Z",
-            },
-        ],
-        flags: ["red", "blue"],
         metrics: {
-            values: [1, 2, 3],
             maybe: 0,
+            values: [1, 2, 3],
         },
         misc: {
             code: "X1",
@@ -92,86 +89,86 @@ const data: SampleItem[] = [
                 value: null,
             },
         },
+        name: "Alpha",
+        note: null,
+        score: 10,
     },
     {
-        id: 2,
-        name: "Beta",
-        label: "release",
         active: false,
-        score: 20,
         created: "2024-01-02T00:00:00.000Z",
-        note: "ok",
+        flags: ["green"],
+        HandledBy: {
+            SalesRep: null,
+        },
+        id: 2,
+        label: "release",
+        Logs: [
+            {
+                message: null,
+                tags: [],
+                type: "OTHER",
+                when: new Date("2024-01-04T00:00:00.000Z"),
+            },
+        ],
         meta: {
             owner: {
                 name: "Bob",
                 nickname: "B",
             },
         },
-        HandledBy: {
-            SalesRep: null,
-        },
-        Logs: [
-            {
-                type: "OTHER",
-                message: null,
-                tags: [],
-                when: new Date("2024-01-04T00:00:00.000Z"),
-            },
-        ],
-        flags: ["green"],
         metrics: {
             values: [5],
         },
         misc: {},
+        name: "Beta",
+        note: "ok",
+        score: 20,
     },
     {
-        id: 3,
-        name: "Gamma",
-        label: "not-a-date",
         active: true,
-        score: 5,
         created: "not-a-date",
+        flags: [],
+        HandledBy: {
+            SalesRep: "THS",
+        },
+        id: 3,
+        label: "not-a-date",
+        Logs: [],
         meta: {
             owner: {
                 name: "Cara",
             },
         },
-        HandledBy: {
-            SalesRep: "THS",
-        },
-        Logs: [],
-        flags: [],
         metrics: {
-            values: [],
             maybe: null,
+            values: [],
         },
+        name: "Gamma",
+        score: 5,
     },
     {
-        id: 4,
-        name: "Delta",
-        label: "2024-01-01",
         active: true,
-        score: 10,
         created: "2024-01-01T00:00:00.000Z",
-        note: undefined,
+        flags: ["red"],
+        HandledBy: {
+            SalesRep: "NHR",
+        },
+        id: 4,
+        label: "2024-01-01",
+        Logs: [
+            {
+                message: "dup",
+                tags: ["y"],
+                type: "CREDIT_MAX_EXCEEDED",
+                when: "2024-01-03T00:00:00.000Z",
+            },
+        ],
         meta: {
             owner: {
                 name: "Dee",
                 nickname: undefined,
             },
         },
-        HandledBy: {
-            SalesRep: "NHR",
-        },
-        Logs: [
-            {
-                type: "CREDIT_MAX_EXCEEDED",
-                message: "dup",
-                tags: ["y"],
-                when: "2024-01-03T00:00:00.000Z",
-            },
-        ],
-        flags: ["red"],
         metrics: {
             values: [10],
         },
@@ -180,11 +177,14 @@ const data: SampleItem[] = [
                 value: "ok",
             },
         },
+        name: "Delta",
+        note: undefined,
+        score: 10,
     },
 ];
 
 const makeEngine = () => Engine.from(IngressEngine.from(data));
-const from = <T extends Record<string, unknown>>(items: readonly T[]) => Engine.from(IngressEngine.from(items));
+const from = <T extends Record<string, unknown>>(items: ReadonlyArray<T>) => Engine.from(IngressEngine.from(items));
 
 describe("Engine - core basics", () => {
     it("returns all items with no filters", () => {
@@ -486,9 +486,9 @@ describe("Engine - aggressive edge cases", () => {
 describe("Engine - additional edge coverage", () => {
     it("covers configure + clearCaches with shared cache enabled", () => {
         IngressEngine.configure({
-            sharedCache: true,
             maxDateCache: 8,
             maxPathCache: 8,
+            sharedCache: true,
         });
 
         const result = from(data)
@@ -500,9 +500,9 @@ describe("Engine - additional edge coverage", () => {
         IngressEngine.clearCaches();
 
         IngressEngine.configure({
-            sharedCache: false,
             maxDateCache: 2048,
             maxPathCache: 2048,
+            sharedCache: false,
         });
     });
 
@@ -557,10 +557,10 @@ describe("Engine - additional edge coverage", () => {
             .map(item => item.id);
         expect(stringBetween).toEqual([2, 4]);
 
-        const bigData: Array<{ id: number; big: bigint }> = [
-            { id: 1, big: 1n },
-            { id: 2, big: 10n },
-            { id: 3, big: 5n },
+        const bigData: Array<{ big: bigint; id: number; }> = [
+            { big: 1n, id: 1 },
+            { big: 10n, id: 2 },
+            { big: 5n, id: 3 },
         ];
 
         const bigResult = from(bigData)
@@ -742,9 +742,9 @@ describe("Engine - extreme break tests", () => {
 describe("Engine - order stability and offsets", () => {
     it("keeps stable order when primary keys tie", () => {
         const stableData = [
-            { id: 1, score: 5, name: "b" },
-            { id: 2, score: 5, name: "a" },
-            { id: 3, score: 5, name: "c" },
+            { id: 1, name: "b", score: 5 },
+            { id: 2, name: "a", score: 5 },
+            { id: 3, name: "c", score: 5 },
         ];
 
         const result = Engine.from(IngressEngine.from(stableData))
@@ -756,10 +756,10 @@ describe("Engine - order stability and offsets", () => {
 
     it("applies multi-key ordering with stable ties", () => {
         const items = [
-            { id: 1, score: 1, name: "b", label: "z" },
-            { id: 2, score: 1, name: "b", label: "a" },
-            { id: 3, score: 1, name: "a", label: "z" },
-            { id: 4, score: 2, name: "a", label: "a" },
+            { id: 1, label: "z", name: "b", score: 1 },
+            { id: 2, label: "a", name: "b", score: 1 },
+            { id: 3, label: "z", name: "a", score: 1 },
+            { id: 4, label: "a", name: "a", score: 2 },
         ];
 
         const result = Engine.from(IngressEngine.from(items))
@@ -793,21 +793,21 @@ describe("Engine - order stability and offsets", () => {
     });
 
     it("keeps offset+limit consistent with full sort", () => {
-        const items: Array<{ id: number; score: number; name: string | null }> = [];
+        const items: Array<{ id: number; name: string | null; score: number; }> = [];
         for (let i = 0; i < 40; i++) {
-            items.push({ id: i, score: i % 5, name: i % 7 === 0 ? null : `n${i % 3}` });
+            items.push({ id: i, name: i % 7 === 0 ? null : `n${i % 3}`, score: i % 5 });
         }
 
         const baseline = [...items]
-            .map((item, index) => ({ item, index }))
-            .sort((a, b) => {
+            .map((item, index) => ({ index, item }))
+            .toSorted((a, b) => {
                 const aKey = a.item.score;
                 const bKey = b.item.score;
-                if (aKey !== bKey) return aKey - bKey;
-                if (a.item.name === b.item.name) return a.index - b.index;
-                if (a.item.name === null) return 1;
-                if (b.item.name === null) return -1;
-                return a.item.name < b.item.name ? -1 : a.item.name > b.item.name ? 1 : a.index - b.index;
+                if (aKey !== bKey) {return aKey - bKey;}
+                if (a.item.name === b.item.name) {return a.index - b.index;}
+                if (a.item.name === null) {return 1;}
+                if (b.item.name === null) {return -1;}
+                return a.item.name < b.item.name ? -1 : (a.item.name > b.item.name ? 1 : a.index - b.index);
             })
             .map(entry => entry.item.id);
 
@@ -849,29 +849,29 @@ describe("Engine - segment fast paths", () => {
 describe("Engine - large randomized dataset", () => {
     it("keeps ordering and filtering consistent on 12k items", () => {
         type LargeItem = {
-            id: number;
             active: boolean;
-            score: number;
-            name: string | null;
             created: Date | string;
+            flags: Array<string>;
+            id: number;
+            Logs: Array<{ tags: Array<string>; type: string; when: Date | string }>;
             meta: {
                 owner: {
                     name: string;
                     nickname?: string | null;
                 };
             };
-            Logs: Array<{ type: string; tags: string[]; when: Date | string }>;
-            flags: string[];
+            name: string | null;
+            score: number;
         };
 
         const mulberry32 = (seed: number) => {
             let t = seed;
             return () => {
-                t += 0x6D2B79F5;
+                t += 0x6D_2B_79_F5;
                 let value = t;
                 value = Math.imul(value ^ (value >>> 15), value | 1);
                 value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
-                return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
+                return ((value ^ (value >>> 14)) >>> 0) / 4_294_967_296;
             };
         };
 
@@ -890,8 +890,8 @@ describe("Engine - large randomized dataset", () => {
         const logTypes = ["WARN", "INFO", "ERROR"];
         const tags = ["red", "green", "blue", "amber"];
 
-        const data: LargeItem[] = [];
-        for (let i = 0; i < 12000; i++) {
+        const data: Array<LargeItem> = [];
+        for (let i = 0; i < 12_000; i++) {
             const baseName = i % 7 === 0 ? `ab${randomString(4)}` : randomString(6);
             const name = i % 31 === 0 ? null : baseName;
             const score = i % 97 === 0 ? Number.NaN : randomInt(50);
@@ -901,34 +901,34 @@ describe("Engine - large randomized dataset", () => {
             const owner = ownerNames[randomInt(ownerNames.length)]!;
             const nick = rng() > 0.8 ? `${owner[0]}${randomInt(9)}` : null;
             const logCount = randomInt(3);
-            const Logs: Array<{ type: string; tags: string[]; when: Date | string }> = [];
+            const Logs: Array<{ tags: Array<string>; type: string; when: Date | string }> = [];
             for (let j = 0; j < logCount; j++) {
                 const type = logTypes[randomInt(logTypes.length)]!;
                 const tagCount = randomInt(3);
-                const logTags: string[] = [];
+                const logTags: Array<string> = [];
                 for (let k = 0; k < tagCount; k++) {
                     logTags.push(tags[randomInt(tags.length)]!);
                 }
                 const when = j % 2 === 0
                     ? new Date(2024, 0, (i % 28) + 1)
                     : `2024-01-${String((i % 28) + 1).padStart(2, "0")}T00:00:00.000Z`;
-                Logs.push({ type, tags: logTags, when });
+                Logs.push({ tags: logTags, type, when });
             }
             const flagCount = randomInt(3);
-            const flags: string[] = [];
+            const flags: Array<string> = [];
             for (let j = 0; j < flagCount; j++) {
                 flags.push(tags[randomInt(tags.length)]!);
             }
 
             data.push({
-                id: i,
                 active: i % 2 === 0,
-                score,
-                name,
                 created,
-                meta: { owner: { name: owner, nickname: nick } },
-                Logs,
                 flags,
+                id: i,
+                Logs,
+                meta: { owner: { name: owner, nickname: nick } },
+                name,
+                score,
             });
         }
 
@@ -953,33 +953,33 @@ describe("Engine - large randomized dataset", () => {
             const leftNull = left === null;
             const rightNull = right === null;
             if (leftNull || rightNull) {
-                if (leftNull && rightNull) return 0;
-                if (leftNull) return nullsFirst ? -1 : 1;
+                if (leftNull && rightNull) {return 0;}
+                if (leftNull) {return nullsFirst ? -1 : 1;}
                 return nullsFirst ? 1 : -1;
             }
-            if (typeof left === "number") return (left - (right as number)) * direction;
-            if (typeof left === "string") return (left < (right as string) ? -1 : left > (right as string) ? 1 : 0) * direction;
+            if (typeof left === "number") {return (left - (right as number)) * direction;}
+            if (typeof left === "string") {return (left < (right as string) ? -1 : (left > (right as string) ? 1 : 0)) * direction;}
             return 0;
         };
 
         const baseline = data
-            .map((item, index) => ({ item, index }))
+            .map((item, index) => ({ index, item }))
             .filter(({ item }) => {
-                if (!item.active) return false;
-                if (!(typeof item.score === "number") || Number.isNaN(item.score)) return false;
-                if (item.score < 20) return false;
-                if (typeof item.name !== "string") return false;
+                if (!item.active) {return false;}
+                if (!(typeof item.score === "number") || Number.isNaN(item.score)) {return false;}
+                if (item.score < 20) {return false;}
+                if (typeof item.name !== "string") {return false;}
                 return item.name.toLowerCase().includes("ab");
             })
-            .sort((a, b) => {
+            .toSorted((a, b) => {
                 const leftScore = Number.isNaN(a.item.score) ? null : a.item.score;
                 const rightScore = Number.isNaN(b.item.score) ? null : b.item.score;
                 const diff0 = compareNullable(leftScore, rightScore, 1, false);
-                if (diff0 !== 0) return diff0;
+                if (diff0 !== 0) {return diff0;}
                 const leftName = typeof a.item.name === "string" ? a.item.name : null;
                 const rightName = typeof b.item.name === "string" ? b.item.name : null;
                 const diff1 = compareNullable(leftName, rightName, 1, false);
-                if (diff1 !== 0) return diff1;
+                if (diff1 !== 0) {return diff1;}
                 return a.index - b.index;
             })
             .slice(25, 75)
@@ -1004,7 +1004,7 @@ describe("Engine - large randomized dataset", () => {
 
         const baselineGroups = new Map<string, number>();
         for (const item of data) {
-            if (!item.active) continue;
+            if (!item.active) {continue;}
             const owner = item.meta.owner.name;
             baselineGroups.set(owner, (baselineGroups.get(owner) ?? 0) + 1);
         }
@@ -1126,6 +1126,50 @@ describe("Engine - ordering, limiting, pagination, grouping", () => {
         makeEngine()
             // @ts-expect-error - cannot group by object path
             .out().groupBy("meta");
+    });
+});
+
+describe("Search + tagger config gating", () => {
+    it("requires configureFuzzy before search string", () => {
+        expect(() =>
+            makeEngine()
+                // @ts-expect-error - search requires configureFuzzy/configureTagger
+                .search("alpha")
+                .out().result()
+        ).toThrow();
+    });
+
+    it("requires configureTagger before tags", () => {
+        expect(() =>
+            makeEngine()
+                // @ts-expect-error - tags requires configureTagger
+                .tags({ has: ["x"] })
+                .out().result()
+        ).toThrow();
+    });
+
+    it("supports configureFuzzy then search", () => {
+        const result = makeEngine()
+            .configureFuzzy({ fields: [{ path: "name" }] })
+            .search("alp")
+            .out().result()
+            .map(item => item.id);
+        expect(result).toEqual([1]);
+    });
+
+    it("supports configureTagger then tags", () => {
+        const result = makeEngine()
+            .configureTagger({
+                rules: [
+                    { equals: "red", field: "flags", tag: "red" },
+                    { equals: "blue", field: "flags", tag: "blue" },
+                ],
+                tags: ["red", "blue"],
+            })
+            .tags({ hasAny: ["red"] })
+            .out().result()
+            .map(item => item.id);
+        expect(result).toEqual([1, 4]);
     });
 });
 
@@ -1262,17 +1306,17 @@ describe("Comparator + heap helpers", () => {
 
     it("createComparator respects multiple keys and stability", () => {
         const orders = [
-            { segments: ["score"], direction: 1 as const, nullsFirst: false, resolve: (v: unknown) => typeof v === "number" ? v : null },
-            { segments: ["name"], direction: 1 as const, nullsFirst: false, resolve: (v: unknown) => typeof v === "string" ? v : null },
-            { segments: ["label"], direction: -1 as const, nullsFirst: true, resolve: (v: unknown) => typeof v === "string" ? v : null },
-            { segments: ["id"], direction: 1 as const, nullsFirst: false, resolve: (v: unknown) => typeof v === "number" ? v : null },
+            { direction: 1 as const, nullsFirst: false, resolve: (v: unknown) => typeof v === "number" ? v : null, segments: ["score"] },
+            { direction: 1 as const, nullsFirst: false, resolve: (v: unknown) => typeof v === "string" ? v : null, segments: ["name"] },
+            { direction: -1 as const, nullsFirst: true, resolve: (v: unknown) => typeof v === "string" ? v : null, segments: ["label"] },
+            { direction: 1 as const, nullsFirst: false, resolve: (v: unknown) => typeof v === "number" ? v : null, segments: ["id"] },
         ];
         const compare = createComparator<{ id: number }>(orders);
         const entries = [
-            { item: { id: 1 }, index: 0, keys: [2, "b", "z", 10] },
-            { item: { id: 2 }, index: 1, keys: [2, "a", "z", 9] },
-            { item: { id: 3 }, index: 2, keys: [2, "a", "a", 8] },
-            { item: { id: 4 }, index: 3, keys: [1, "c", "z", 7] },
+            { index: 0, item: { id: 1 }, keys: [2, "b", "z", 10] },
+            { index: 1, item: { id: 2 }, keys: [2, "a", "z", 9] },
+            { index: 2, item: { id: 3 }, keys: [2, "a", "a", 8] },
+            { index: 3, item: { id: 4 }, keys: [1, "c", "z", 7] },
         ];
         entries.sort(compare);
         expect(entries.map(entry => entry.item.id)).toEqual([4, 2, 3, 1]);
@@ -1280,7 +1324,7 @@ describe("Comparator + heap helpers", () => {
 
     it("heap helpers keep max-heap order", () => {
         const compare = (a: number, b: number) => a - b;
-        const heap: number[] = [];
+        const heap: Array<number> = [];
         heapPush(heap, 3, compare);
         heapPush(heap, 1, compare);
         heapPush(heap, 5, compare);
@@ -1325,9 +1369,9 @@ describe("Cache + path helpers", () => {
         const first = resolveFirstWithSegments(obj, flatSegments);
         expect(first).toEqual(1);
 
-        const values: number[] = [];
+        const values: Array<number> = [];
         forEachResolvedWithSegments(obj, flatSegments, value => {
-            if (typeof value === "number") values.push(value);
+            if (typeof value === "number") {values.push(value);}
         });
         expect(values).toEqual([1, 2, 3]);
 
@@ -1340,9 +1384,9 @@ describe("Cache + path helpers", () => {
         const deepSegments = ["a", "b", "c", "d"];
         expect(someResolvedWithSegments(deepObj, deepSegments, value => value === 2)).toEqual(true);
         expect(resolveFirstWithSegments(deepObj, deepSegments)).toEqual(1);
-        const deepValues: number[] = [];
+        const deepValues: Array<number> = [];
         forEachResolvedWithSegments(deepObj, deepSegments, value => {
-            if (typeof value === "number") deepValues.push(value);
+            if (typeof value === "number") {deepValues.push(value);}
         });
         expect(deepValues).toEqual([1, 2]);
         expect(everyResolvedWithSegments(deepObj, deepSegments, value => typeof value === "number")).toEqual(true);
@@ -1385,12 +1429,12 @@ describe("Ingress + schema helpers", () => {
     });
 
     it("ingress create respects shared cache usage", () => {
-        IngressEngine.configure({ sharedCache: true, maxDateCache: 2, maxPathCache: 2 });
+        IngressEngine.configure({ maxDateCache: 2, maxPathCache: 2, sharedCache: true });
         const a = IngressEngine.create<SampleItem>();
         const b = IngressEngine.create<SampleItem>();
         expect(a.cache).toBe(b.cache);
         IngressEngine.clearCaches();
-        IngressEngine.configure({ sharedCache: false, maxDateCache: 2048, maxPathCache: 2048 });
+        IngressEngine.configure({ maxDateCache: 2048, maxPathCache: 2048, sharedCache: false });
     });
 });
 
@@ -1426,7 +1470,7 @@ describe("Execution + egress edge cases", () => {
     it("egress paginate handles out-of-range pages", () => {
         const cursor = makeEngine()
             .out()
-            .paginate({ pageSize: 2, page: 10, total: "lazy" });
+            .paginate({ page: 10, pageSize: 2, total: "lazy" });
         expect(cursor.data).toEqual([]);
         expect(cursor.total).toEqual(4);
         const prev = cursor.previous();
@@ -1437,7 +1481,7 @@ describe("Execution + egress edge cases", () => {
         const grouped = makeEngine()
             .out()
             .groupBy("created", { date: true });
-        const keys = Array.from(grouped.keys()).filter(key => typeof key === "number");
+        const keys = [...grouped.keys()].filter(key => typeof key === "number");
         expect(keys.length).toBeGreaterThan(0);
     });
 });

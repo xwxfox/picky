@@ -10,19 +10,19 @@ import {
 } from "@/core/shared/cache";
 import type { CacheState } from "@/core/shared/cache";
 
-export interface IngressConfig {
+export type IngressConfig = {
     cache?: Partial<CacheOptions>;
     sharedCache?: boolean;
 }
 
 export class IngressEngine<T extends Record<string, unknown>> {
     public constructor(
-        public readonly data: readonly T[],
+        public readonly data: ReadonlyArray<T>,
         public readonly cache: CacheState,
         public readonly schema?: Schema<T>
     ) {}
 
-    static from<T extends Record<string, unknown>>(data: readonly T[], schema?: Schema<T>): IngressEngine<T> {
+    static from<T extends Record<string, unknown>>(data: ReadonlyArray<T>, schema?: Schema<T>): IngressEngine<T> {
         return new IngressEngine<T>(data, createCacheState(defaultCacheOptions), schema);
     }
 
@@ -40,7 +40,7 @@ export class IngressEngine<T extends Record<string, unknown>> {
             cache = createCacheState(cacheOptions);
         }
         
-        const empty: T[] = [];
+        const empty: Array<T> = [];
         return new IngressEngine<T>(empty, cache, schema);
     }
 
@@ -53,9 +53,9 @@ export class IngressEngine<T extends Record<string, unknown>> {
         maxPathCache?: number;
         sharedCache?: boolean;
     }): void {
-        if (typeof options.sharedCache === "boolean") setUseSharedCache(options.sharedCache);
-        if (typeof options.maxDateCache === "number") defaultCacheOptions.maxDateCache = options.maxDateCache;
-        if (typeof options.maxPathCache === "number") defaultCacheOptions.maxPathCache = options.maxPathCache;
+        if (typeof options.sharedCache === "boolean") {setUseSharedCache(options.sharedCache);}
+        if (typeof options.maxDateCache === "number") {defaultCacheOptions.maxDateCache = options.maxDateCache;}
+        if (typeof options.maxPathCache === "number") {defaultCacheOptions.maxPathCache = options.maxPathCache;}
         if (getUseSharedCache()) {
             setSharedCacheState(createCacheState(defaultCacheOptions));
         }
@@ -69,11 +69,11 @@ export class IngressEngine<T extends Record<string, unknown>> {
         }
     }
 
-    load(data: readonly T[]): IngressEngine<T> {
+    load(data: ReadonlyArray<T>): IngressEngine<T> {
         return new IngressEngine<T>(data, this.cache, this.schema);
     }
 
-    loadFrom<U>(source: U, adapter: (input: U) => readonly T[]): IngressEngine<T> {
+    loadFrom<U>(source: U, adapter: (input: U) => ReadonlyArray<T>): IngressEngine<T> {
         return new IngressEngine<T>(adapter(source), this.cache, this.schema);
     }
 
@@ -86,7 +86,7 @@ export class IngressEngine<T extends Record<string, unknown>> {
     }
 
     clear(): IngressEngine<T> {
-        const empty: T[] = [];
+        const empty: Array<T> = [];
         return new IngressEngine<T>(empty, this.cache, this.schema);
     }
 }

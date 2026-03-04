@@ -1,4 +1,4 @@
-import { IngressEngine } from "@/io/ingress";
+import type { IngressEngine } from "@/io/ingress";
 import { QueryBuilder } from "./builder";
 
 export class Engine {

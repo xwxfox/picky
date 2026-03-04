@@ -1,32 +1,29 @@
 type LogEntry = {
-    type: string;
     message: string | null;
-    tags: string[];
+    tags: Array<string>;
+    type: string;
     when: Date | string;
 };
 
 type SampleItem = {
-    id: number;
-    name: string;
-    label: string;
     active: boolean;
-    score: number;
     created: Date | string | number;
-    note?: string | null;
+    flags: Array<string>;
+    HandledBy: {
+        SalesRep: string | null;
+    };
+    id: number;
+    label: string;
+    Logs: Array<LogEntry>;
     meta: {
         owner: {
             name: string;
             nickname?: string | null;
         };
     };
-    HandledBy: {
-        SalesRep: string | null;
-    };
-    Logs: LogEntry[];
-    flags: string[];
     metrics: {
-        values: number[];
         maybe?: number | null;
+        values: Array<number>;
     };
     misc?: {
         code?: string;
@@ -34,38 +31,44 @@ type SampleItem = {
             value?: string | null;
         };
     };
+    name: string;
+    note?: string | null;
+    score: number;
 };
 
-const data: SampleItem[] = [
+const data: Array<SampleItem> = [
     {
-        id: 1,
-        name: "Alpha",
-        label: "2026-01-01",
         active: true,
-        score: 10,
         created: new Date("2026-01-01T00:00:00.000Z"),
-        note: null,
+        flags: ["red", "blue"],
+        HandledBy: {
+            SalesRep: "OWO",
+        },
+        id: 1,
+        label: "2026-01-01",
+        Logs: [
+            {
+                message: "over",
+                tags: ["x"],
+                type: "CREDIT_MAX_EXCEEDED",
+                when: "2026-01-03T00:00:00.000Z",
+            },
+                        {
+                message: "over",
+                tags: ["x"],
+                type: "OTHER",
+                when: "2026-01-03T00:00:00.000Z",
+            },
+        ],
         meta: {
             owner: {
                 name: "Alice",
                 nickname: null,
             },
         },
-        HandledBy: {
-            SalesRep: "OWO",
-        },
-        Logs: [
-            {
-                type: "CREDIT_MAX_EXCEEDED",
-                message: "over",
-                tags: ["x"],
-                when: "2026-01-03T00:00:00.000Z",
-            },
-        ],
-        flags: ["red", "blue"],
         metrics: {
-            values: [1, 2, 3],
             maybe: 0,
+            values: [1, 2, 3],
         },
         misc: {
             code: "X1",
@@ -73,86 +76,86 @@ const data: SampleItem[] = [
                 value: null,
             },
         },
+        name: "Alpha",
+        note: null,
+        score: 10,
     },
     {
-        id: 2,
-        name: "Beta",
-        label: "release",
         active: false,
-        score: 20,
         created: "2026-01-02T00:00:00.000Z",
-        note: "ok",
+        flags: ["green"],
+        HandledBy: {
+            SalesRep: null,
+        },
+        id: 2,
+        label: "release",
+        Logs: [
+            {
+                message: null,
+                tags: [],
+                type: "OTHER",
+                when: new Date("2026-01-04T00:00:00.000Z"),
+            },
+        ],
         meta: {
             owner: {
                 name: "Bob",
                 nickname: "B",
             },
         },
-        HandledBy: {
-            SalesRep: null,
-        },
-        Logs: [
-            {
-                type: "OTHER",
-                message: null,
-                tags: [],
-                when: new Date("2026-01-04T00:00:00.000Z"),
-            },
-        ],
-        flags: ["green"],
         metrics: {
             values: [5],
         },
         misc: {},
+        name: "Beta",
+        note: "ok",
+        score: 20,
     },
     {
-        id: 3,
-        name: "Gamma",
-        label: "not-a-date",
         active: true,
-        score: 5,
         created: "not-a-date",
+        flags: [],
+        HandledBy: {
+            SalesRep: "PAW",
+        },
+        id: 3,
+        label: "not-a-date",
+        Logs: [],
         meta: {
             owner: {
                 name: "Cara",
             },
         },
-        HandledBy: {
-            SalesRep: "PAW",
-        },
-        Logs: [],
-        flags: [],
         metrics: {
-            values: [],
             maybe: null,
+            values: [],
         },
+        name: "Gamma",
+        score: 5,
     },
     {
-        id: 4,
-        name: "Delta",
-        label: "2026-01-01",
         active: true,
-        score: 10,
         created: "2026-01-01T00:00:00.000Z",
-        note: undefined,
+        flags: ["red"],
+        HandledBy: {
+            SalesRep: "OWO",
+        },
+        id: 4,
+        label: "2026-01-01",
+        Logs: [
+            {
+                message: "dup",
+                tags: ["y"],
+                type: "CREDIT_MAX_EXCEEDED",
+                when: "2026-01-03T00:00:00.000Z",
+            },
+        ],
         meta: {
             owner: {
                 name: "Dee",
                 nickname: undefined,
             },
         },
-        HandledBy: {
-            SalesRep: "OWO",
-        },
-        Logs: [
-            {
-                type: "CREDIT_MAX_EXCEEDED",
-                message: "dup",
-                tags: ["y"],
-                when: "2026-01-03T00:00:00.000Z",
-            },
-        ],
-        flags: ["red"],
         metrics: {
             values: [10],
         },
@@ -161,6 +164,9 @@ const data: SampleItem[] = [
                 value: "ok",
             },
         },
+        name: "Delta",
+        note: undefined,
+        score: 10,
     },
 ];
 import { Engine, IngressEngine } from "../src";
@@ -172,13 +178,53 @@ const res = filter.in("HandledBy.SalesRep", ["PAW", "OWO"])
     .nested("Logs", p =>
         p.arraySome("tags", tag => tag === "x")
     )
+    .configureFuzzy({
+        fields: [
+            {path: "label"}
+        ]
+    })
+    .search("rele")
     .dateBetween("created", "2026-01-01", "2026-02-31")
     .out()
     .orderByDate("created", { direction: "desc" })
     .limit(5)
+
     .result();
 
 console.dir(res, { depth: null });
+const search = filter
+    .configureFuzzy({
+        fields: [
+            {path: "label"}
+        ]
+    })
+    .out()
+    .orderByDate("created", { direction: "desc" })
+    .limit(5)
+    .search("r")
+    .result();
+
+console.dir(search, { depth: null });
+const tagging = filter
+    .configureTagger({
+        rules: [
+            {
+                equals: "OTHER",
+                field: "Logs.type",
+                tag: "logs_other"
+            }
+        ],
+        tags: ["logs_other"]
+    })
+    .out()
+    .orderByDate("created", { direction: "desc" })
+    .limit(5)
+    .tags({
+        notAny: ["logs_other"]
+    })
+    .result();
+
+console.dir(tagging, { depth: null });
 
 const grouped = filter
     .equals("active", true)

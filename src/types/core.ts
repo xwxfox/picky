@@ -41,7 +41,7 @@ export type ResolveValue =
     | { [key: string]: ResolveValue }
     | ResolveValue[];
 
-export type ResolveObject = { [key: string]: ResolveValue };
+export type ResolveObject = Record<string, ResolveValue>;
 
 export type OrderOptions = {
     direction?: OrderDirection;
@@ -51,17 +51,17 @@ export type OrderOptions = {
 export type PaginationTotalMode = "none" | "lazy" | "full";
 
 export type PaginationOptions = {
-    pageSize: number;
     page?: number;
+    pageSize: number;
     total?: PaginationTotalMode;
 };
 
 export type PaginationCursor<T> = {
-    data: T[];
-    page: number;
-    total?: number;
+    data: Array<T>;
     next: () => PaginationCursor<T>;
+    page: number;
     previous: () => PaginationCursor<T>;
+    total?: number;
 };
 
 export type CacheOptions = {
@@ -74,13 +74,13 @@ export type ResolvePredicate = (value: ResolveValue) => boolean;
 export type ResolveSortKey = (value: ResolveValue) => SortKey | null;
 
 export type OrderSpec = {
-    segments: string[];
     direction: 1 | -1;
     nullsFirst: boolean;
     resolve: ResolveSortKey;
+    segments: Array<string>;
 };
 
 export type GroupSpec = {
-    segments: string[];
     convert: (value: ResolveValue) => GroupKeyValue | null;
+    segments: Array<string>;
 };

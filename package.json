@@ -4,10 +4,20 @@
   "scripts": {
     "test": "bun test --coverage",
     "example": "bun examples/example.ts",
-    "bench": "./scripts/compare.sh"
+    "bench": "./scripts/compare.sh",
+    "lint": "oxlint --fix --type-aware",
+    "typecheck": "tsgo --noEmit"
   },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@nkzw/eslint-plugin": "^2.0.0",
+    "@nkzw/oxlint-config": "^1.0.1",
+    "@types/bun": "latest",
+    "eslint-plugin-no-only-tests": "^3.3.0",
+    "eslint-plugin-perfectionist": "^5.6.0",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "eslint-plugin-unused-imports": "^4.4.1",
+    "oxlint": "^1.51.0",
+    "oxlint-tsgolint": "^0.16.0"
   },
   "peerDependencies": {
     "typescript": "^5"

@@ -36,3 +36,5 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 random_testing/
 perf/*.md
 perf/**/*.md
+perf/bench-data/*.json
+perf/bench-data/**/*.json

@@ -2,6 +2,7 @@
 # Run and profile all benchmarks in scripts/smol-bench/tasks/*.bench.ts
 # - First run: timed (time -p)
 # - Second run: bun with --cpu-prof-md and --heap-prof-md, saving to ./perf
+# - Pre-run: generate benchmark data in ./perf/bench-data
 #
 # Usage (from repo root): bun ru bench
 
@@ -34,6 +35,10 @@ if [ "${#bench_files[@]}" -eq 0 ]; then
   echo "No .bench.ts files found in $BENCH_DIR"
   exit 0
 fi
+
+echo
+echo "Generating benchmark data..."
+bun "$SCRIPT_DIR/smol-bench/generate_data.ts"
 
 for bench_path in "${bench_files[@]}"; do
   bench_file="$(basename "$bench_path")"          # e.g. 12k.bench.ts

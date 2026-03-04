@@ -1,3 +1,18 @@
-export type SearchConfig = {
-    enabled: boolean;
-};
+export type {
+    SearchCapabilityState,
+    DefaultSearchCapabilityState,
+    WithFuzzy,
+    WithTagger,
+    MergeSearchCapability,
+    AvailableTags,
+    FuzzyPaths,
+    FuzzyField,
+    FuzzyOrder,
+    FuzzyQueryInput,
+    FuzzyConfig,
+    TagFilter,
+    TaggerRule,
+    TaggerConfig,
+    SearchQuery,
+    SearchInput,
+} from "@/types/search";

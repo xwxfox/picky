@@ -2,16 +2,16 @@ import type { ResolvePredicate, ResolveObject, ResolveValue, ResolveSortKey, Sor
 
 export function someResolvedWithSegments(
     obj: ResolveObject,
-    segments: string[],
+    segments: Array<string>,
     predicate: ResolvePredicate
 ): boolean {
-    if (obj == null || typeof obj !== "object") return false;
+    if (obj == null || typeof obj !== "object") {return false;}
 
     if (segments.length === 1) {
-        const resolved = (obj as ResolveObject)[segments[0]!];
+        const resolved = (obj)[segments[0]!];
         if (Array.isArray(resolved)) {
             for (let i = 0; i < resolved.length; i++) {
-                if (predicate(resolved[i] as ResolveValue)) return true;
+                if (predicate(resolved[i])) {return true;}
             }
             return false;
         }
@@ -21,24 +21,24 @@ export function someResolvedWithSegments(
     if (segments.length === 2) {
         const first = segments[0]!;
         const second = segments[1]!;
-        const resolved = (obj as ResolveObject)[first];
+        const resolved = (obj)[first];
         if (Array.isArray(resolved)) {
             for (let i = 0; i < resolved.length; i++) {
-                const entry = resolved[i] as ResolveValue;
-                if (entry == null || typeof entry !== "object") continue;
+                const entry = resolved[i];
+                if (entry == null || typeof entry !== "object") {continue;}
                 const value = (entry as ResolveObject)[second];
-                if (Array.isArray(value)) continue;
+                if (Array.isArray(value)) {continue;}
                 if (predicate(value as ResolveValue)) {
                     return true;
                 }
             }
             return false;
         }
-        if (resolved == null || typeof resolved !== "object") return false;
+        if (resolved == null || typeof resolved !== "object") {return false;}
         const value = (resolved as ResolveObject)[second];
         if (Array.isArray(value)) {
             for (let i = 0; i < value.length; i++) {
-                if (predicate(value[i] as ResolveValue)) return true;
+                if (predicate(value[i])) {return true;}
             }
             return false;
         }
@@ -49,49 +49,49 @@ export function someResolvedWithSegments(
         const first = segments[0]!;
         const second = segments[1]!;
         const third = segments[2]!;
-        const resolved = (obj as ResolveObject)[first];
+        const resolved = (obj)[first];
         if (Array.isArray(resolved)) {
             for (let i = 0; i < resolved.length; i++) {
-                const entry = resolved[i] as ResolveValue;
-                if (entry == null || typeof entry !== "object") continue;
+                const entry = resolved[i];
+                if (entry == null || typeof entry !== "object") {continue;}
                 const value = (entry as ResolveObject)[second];
-                if (Array.isArray(value)) continue;
-                if (value == null || typeof value !== "object") continue;
+                if (Array.isArray(value)) {continue;}
+                if (value == null || typeof value !== "object") {continue;}
                 const leaf = (value as ResolveObject)[third];
-                if (Array.isArray(leaf)) continue;
+                if (Array.isArray(leaf)) {continue;}
                 if (predicate(leaf as ResolveValue)) {
                     return true;
                 }
             }
             return false;
         }
-        if (resolved == null || typeof resolved !== "object") return false;
+        if (resolved == null || typeof resolved !== "object") {return false;}
         const value = (resolved as ResolveObject)[second];
         if (Array.isArray(value)) {
             for (let i = 0; i < value.length; i++) {
-                const entry = value[i] as ResolveValue;
-                if (entry == null || typeof entry !== "object") continue;
+                const entry = value[i];
+                if (entry == null || typeof entry !== "object") {continue;}
                 const leaf = (entry as ResolveObject)[third];
-                if (Array.isArray(leaf)) continue;
+                if (Array.isArray(leaf)) {continue;}
                 if (predicate(leaf as ResolveValue)) {
                     return true;
                 }
             }
             return false;
         }
-        if (value == null || typeof value !== "object") return false;
+        if (value == null || typeof value !== "object") {return false;}
         const leaf = (value as ResolveObject)[third];
         if (Array.isArray(leaf)) {
             for (let i = 0; i < leaf.length; i++) {
-                if (predicate(leaf[i] as ResolveValue)) return true;
+                if (predicate(leaf[i])) {return true;}
             }
             return false;
         }
         return predicate(leaf as ResolveValue);
     }
 
-    let current: ResolveValue[] = [obj as ResolveValue];
-    let next: ResolveValue[] = [];
+    let current: Array<ResolveValue> = [obj as ResolveValue];
+    let next: Array<ResolveValue> = [];
     let seenArray = false;
 
     for (let i = 0; i < segments.length; i++) {
@@ -101,30 +101,30 @@ export function someResolvedWithSegments(
 
         for (let j = 0; j < current.length; j++) {
             const value = current[j];
-            if (value == null) continue;
-            if (typeof value !== "object") continue;
+            if (value == null) {continue;}
+            if (typeof value !== "object") {continue;}
 
             const resolved = (value as ResolveObject)[segment];
 
             if (Array.isArray(resolved)) {
-                if (seenArray) continue;
-                if (!isLast) seenArray = true;
+                if (seenArray) {continue;}
+                if (!isLast) {seenArray = true;}
                 for (let k = 0; k < resolved.length; k++) {
-                    const entry = resolved[k] as ResolveValue;
+                    const entry = resolved[k];
                     if (isLast) {
-                        if (predicate(entry)) return true;
+                        if (predicate(entry)) {return true;}
                     } else {
                         next[nextIndex++] = entry;
                     }
                 }
             } else if (isLast) {
-                if (predicate(resolved as ResolveValue)) return true;
+                if (predicate(resolved as ResolveValue)) {return true;}
             } else {
                 next[nextIndex++] = resolved as ResolveValue;
             }
         }
 
-        if (isLast) return false;
+        if (isLast) {return false;}
 
         next.length = nextIndex;
         const temp = current;
@@ -137,33 +137,33 @@ export function someResolvedWithSegments(
 
 export function resolveFirstWithSegments(
     obj: ResolveObject,
-    segments: string[]
+    segments: Array<string>
 ): ResolveValue | undefined {
-    if (obj == null || typeof obj !== "object") return undefined;
+    if (obj == null || typeof obj !== "object") {return undefined;}
     if (segments.length === 1) {
-        const resolved = (obj as ResolveObject)[segments[0]!];
-        if (Array.isArray(resolved)) return resolved.length > 0 ? (resolved[0] as ResolveValue) : undefined;
+        const resolved = (obj)[segments[0]!];
+        if (Array.isArray(resolved)) {return resolved.length > 0 ? (resolved[0]) : undefined;}
         return resolved as ResolveValue;
     }
 
     if (segments.length === 2) {
         const first = segments[0]!;
         const second = segments[1]!;
-        const resolved = (obj as ResolveObject)[first];
+        const resolved = (obj)[first];
         if (Array.isArray(resolved)) {
             for (let i = 0; i < resolved.length; i++) {
-                const entry = resolved[i] as ResolveValue;
-                if (entry == null || typeof entry !== "object") continue;
+                const entry = resolved[i];
+                if (entry == null || typeof entry !== "object") {continue;}
                 const value = (entry as ResolveObject)[second];
-                if (Array.isArray(value)) continue;
+                if (Array.isArray(value)) {continue;}
                 return value as ResolveValue;
             }
             return undefined;
         }
-        if (resolved == null || typeof resolved !== "object") return undefined;
+        if (resolved == null || typeof resolved !== "object") {return undefined;}
         const value = (resolved as ResolveObject)[second];
         if (Array.isArray(value)) {
-            return value.length > 0 ? (value[0] as ResolveValue) : undefined;
+            return value.length > 0 ? (value[0]) : undefined;
         }
         return value as ResolveValue;
     }
@@ -172,40 +172,40 @@ export function resolveFirstWithSegments(
         const first = segments[0]!;
         const second = segments[1]!;
         const third = segments[2]!;
-        const resolved = (obj as ResolveObject)[first];
+        const resolved = (obj)[first];
         if (Array.isArray(resolved)) {
             for (let i = 0; i < resolved.length; i++) {
-                const entry = resolved[i] as ResolveValue;
-                if (entry == null || typeof entry !== "object") continue;
+                const entry = resolved[i];
+                if (entry == null || typeof entry !== "object") {continue;}
                 const value = (entry as ResolveObject)[second];
-                if (Array.isArray(value)) continue;
-                if (value == null || typeof value !== "object") continue;
+                if (Array.isArray(value)) {continue;}
+                if (value == null || typeof value !== "object") {continue;}
                 const leaf = (value as ResolveObject)[third];
-                if (Array.isArray(leaf)) continue;
+                if (Array.isArray(leaf)) {continue;}
                 return leaf as ResolveValue;
             }
             return undefined;
         }
-        if (resolved == null || typeof resolved !== "object") return undefined;
+        if (resolved == null || typeof resolved !== "object") {return undefined;}
         const value = (resolved as ResolveObject)[second];
         if (Array.isArray(value)) {
             for (let i = 0; i < value.length; i++) {
-                const entry = value[i] as ResolveValue;
-                if (entry == null || typeof entry !== "object") continue;
+                const entry = value[i];
+                if (entry == null || typeof entry !== "object") {continue;}
                 const leaf = (entry as ResolveObject)[third];
-                if (Array.isArray(leaf)) continue;
+                if (Array.isArray(leaf)) {continue;}
                 return leaf as ResolveValue;
             }
             return undefined;
         }
-        if (value == null || typeof value !== "object") return undefined;
+        if (value == null || typeof value !== "object") {return undefined;}
         const leaf = (value as ResolveObject)[third];
-        if (Array.isArray(leaf)) return leaf.length > 0 ? (leaf[0] as ResolveValue) : undefined;
+        if (Array.isArray(leaf)) {return leaf.length > 0 ? (leaf[0]) : undefined;}
         return leaf as ResolveValue;
     }
 
-    let current: ResolveValue[] = [obj as ResolveValue];
-    let next: ResolveValue[] = [];
+    let current: Array<ResolveValue> = [obj as ResolveValue];
+    let next: Array<ResolveValue> = [];
     let seenArray = false;
 
     for (let i = 0; i < segments.length; i++) {
@@ -215,19 +215,19 @@ export function resolveFirstWithSegments(
 
         for (let j = 0; j < current.length; j++) {
             const value = current[j];
-            if (value == null) continue;
-            if (typeof value !== "object") continue;
+            if (value == null) {continue;}
+            if (typeof value !== "object") {continue;}
 
             const resolved = (value as ResolveObject)[segment];
 
             if (Array.isArray(resolved)) {
-                if (seenArray) continue;
+                if (seenArray) {continue;}
                 if (isLast) {
-                    return resolved.length > 0 ? (resolved[0] as ResolveValue) : undefined;
+                    return resolved.length > 0 ? (resolved[0]) : undefined;
                 }
                 seenArray = true;
                 for (let k = 0; k < resolved.length; k++) {
-                    next[nextIndex++] = resolved[k] as ResolveValue;
+                    next[nextIndex++] = resolved[k];
                 }
             } else if (isLast) {
                 return resolved as ResolveValue;
@@ -236,7 +236,7 @@ export function resolveFirstWithSegments(
             }
         }
 
-        if (isLast) return undefined;
+        if (isLast) {return undefined;}
 
         next.length = nextIndex;
         const temp = current;
@@ -249,16 +249,16 @@ export function resolveFirstWithSegments(
 
 export function forEachResolvedWithSegments(
     obj: ResolveObject,
-    segments: string[],
+    segments: Array<string>,
     visit: (value: ResolveValue) => void
 ): void {
-    if (obj == null || typeof obj !== "object") return;
+    if (obj == null || typeof obj !== "object") {return;}
 
     if (segments.length === 1) {
-        const resolved = (obj as ResolveObject)[segments[0]!];
+        const resolved = (obj)[segments[0]!];
         if (Array.isArray(resolved)) {
             for (let i = 0; i < resolved.length; i++) {
-                visit(resolved[i] as ResolveValue);
+                visit(resolved[i]);
             }
             return;
         }
@@ -269,22 +269,22 @@ export function forEachResolvedWithSegments(
     if (segments.length === 2) {
         const first = segments[0]!;
         const second = segments[1]!;
-        const resolved = (obj as ResolveObject)[first];
+        const resolved = (obj)[first];
         if (Array.isArray(resolved)) {
             for (let i = 0; i < resolved.length; i++) {
-                const entry = resolved[i] as ResolveValue;
-                if (entry == null || typeof entry !== "object") continue;
+                const entry = resolved[i];
+                if (entry == null || typeof entry !== "object") {continue;}
                 const value = (entry as ResolveObject)[second];
-                if (Array.isArray(value)) continue;
+                if (Array.isArray(value)) {continue;}
                 visit(value as ResolveValue);
             }
             return;
         }
-        if (resolved == null || typeof resolved !== "object") return;
+        if (resolved == null || typeof resolved !== "object") {return;}
         const value = (resolved as ResolveObject)[second];
         if (Array.isArray(value)) {
             for (let i = 0; i < value.length; i++) {
-                visit(value[i] as ResolveValue);
+                visit(value[i]);
             }
             return;
         }
@@ -296,37 +296,37 @@ export function forEachResolvedWithSegments(
         const first = segments[0]!;
         const second = segments[1]!;
         const third = segments[2]!;
-        const resolved = (obj as ResolveObject)[first];
+        const resolved = (obj)[first];
         if (Array.isArray(resolved)) {
             for (let i = 0; i < resolved.length; i++) {
-                const entry = resolved[i] as ResolveValue;
-                if (entry == null || typeof entry !== "object") continue;
+                const entry = resolved[i];
+                if (entry == null || typeof entry !== "object") {continue;}
                 const value = (entry as ResolveObject)[second];
-                if (Array.isArray(value)) continue;
-                if (value == null || typeof value !== "object") continue;
+                if (Array.isArray(value)) {continue;}
+                if (value == null || typeof value !== "object") {continue;}
                 const leaf = (value as ResolveObject)[third];
-                if (Array.isArray(leaf)) continue;
+                if (Array.isArray(leaf)) {continue;}
                 visit(leaf as ResolveValue);
             }
             return;
         }
-        if (resolved == null || typeof resolved !== "object") return;
+        if (resolved == null || typeof resolved !== "object") {return;}
         const value = (resolved as ResolveObject)[second];
         if (Array.isArray(value)) {
             for (let i = 0; i < value.length; i++) {
-                const entry = value[i] as ResolveValue;
-                if (entry == null || typeof entry !== "object") continue;
+                const entry = value[i];
+                if (entry == null || typeof entry !== "object") {continue;}
                 const leaf = (entry as ResolveObject)[third];
-                if (Array.isArray(leaf)) continue;
+                if (Array.isArray(leaf)) {continue;}
                 visit(leaf as ResolveValue);
             }
             return;
         }
-        if (value == null || typeof value !== "object") return;
+        if (value == null || typeof value !== "object") {return;}
         const leaf = (value as ResolveObject)[third];
         if (Array.isArray(leaf)) {
             for (let i = 0; i < leaf.length; i++) {
-                visit(leaf[i] as ResolveValue);
+                visit(leaf[i]);
             }
             return;
         }
@@ -334,8 +334,8 @@ export function forEachResolvedWithSegments(
         return;
     }
 
-    let current: ResolveValue[] = [obj as ResolveValue];
-    let next: ResolveValue[] = [];
+    let current: Array<ResolveValue> = [obj as ResolveValue];
+    let next: Array<ResolveValue> = [];
     let seenArray = false;
 
     for (let i = 0; i < segments.length; i++) {
@@ -345,21 +345,21 @@ export function forEachResolvedWithSegments(
 
         for (let j = 0; j < current.length; j++) {
             const value = current[j];
-            if (value == null) continue;
-            if (typeof value !== "object") continue;
+            if (value == null) {continue;}
+            if (typeof value !== "object") {continue;}
 
             const resolved = (value as ResolveObject)[segment];
 
             if (Array.isArray(resolved)) {
-                if (seenArray) continue;
+                if (seenArray) {continue;}
                 if (isLast) {
                     for (let k = 0; k < resolved.length; k++) {
-                        visit(resolved[k] as ResolveValue);
+                        visit(resolved[k]);
                     }
                 } else {
                     seenArray = true;
                     for (let k = 0; k < resolved.length; k++) {
-                        next[nextIndex++] = resolved[k] as ResolveValue;
+                        next[nextIndex++] = resolved[k];
                     }
                 }
             } else if (isLast) {
@@ -369,7 +369,7 @@ export function forEachResolvedWithSegments(
             }
         }
 
-        if (isLast) return;
+        if (isLast) {return;}
 
         next.length = nextIndex;
         const temp = current;
@@ -380,17 +380,17 @@ export function forEachResolvedWithSegments(
 
 export function everyResolvedWithSegments(
     obj: ResolveObject,
-    segments: string[],
+    segments: Array<string>,
     predicate: ResolvePredicate
 ): boolean {
-    if (obj == null || typeof obj !== "object") return false;
+    if (obj == null || typeof obj !== "object") {return false;}
 
     if (segments.length === 1) {
-        const resolved = (obj as ResolveObject)[segments[0]!];
+        const resolved = (obj)[segments[0]!];
         if (Array.isArray(resolved)) {
-            if (resolved.length === 0) return false;
+            if (resolved.length === 0) {return false;}
             for (let i = 0; i < resolved.length; i++) {
-                if (!predicate(resolved[i] as ResolveValue)) return false;
+                if (!predicate(resolved[i])) {return false;}
             }
             return true;
         }
@@ -400,26 +400,26 @@ export function everyResolvedWithSegments(
     if (segments.length === 2) {
         const first = segments[0]!;
         const second = segments[1]!;
-        const resolved = (obj as ResolveObject)[first];
+        const resolved = (obj)[first];
         let found = false;
         if (Array.isArray(resolved)) {
             for (let i = 0; i < resolved.length; i++) {
-                const entry = resolved[i] as ResolveValue;
-                if (entry == null || typeof entry !== "object") continue;
+                const entry = resolved[i];
+                if (entry == null || typeof entry !== "object") {continue;}
                 const value = (entry as ResolveObject)[second];
-                if (Array.isArray(value)) continue;
+                if (Array.isArray(value)) {continue;}
                 found = true;
-                if (!predicate(value as ResolveValue)) return false;
+                if (!predicate(value as ResolveValue)) {return false;}
             }
             return found;
         }
-        if (resolved == null || typeof resolved !== "object") return false;
+        if (resolved == null || typeof resolved !== "object") {return false;}
         const value = (resolved as ResolveObject)[second];
         if (Array.isArray(value)) {
-            if (value.length === 0) return false;
+            if (value.length === 0) {return false;}
             for (let i = 0; i < value.length; i++) {
                 found = true;
-                if (!predicate(value[i] as ResolveValue)) return false;
+                if (!predicate(value[i])) {return false;}
             }
             return found;
         }
@@ -430,49 +430,49 @@ export function everyResolvedWithSegments(
         const first = segments[0]!;
         const second = segments[1]!;
         const third = segments[2]!;
-        const resolved = (obj as ResolveObject)[first];
+        const resolved = (obj)[first];
         let found = false;
         if (Array.isArray(resolved)) {
             for (let i = 0; i < resolved.length; i++) {
-                const entry = resolved[i] as ResolveValue;
-                if (entry == null || typeof entry !== "object") continue;
+                const entry = resolved[i];
+                if (entry == null || typeof entry !== "object") {continue;}
                 const value = (entry as ResolveObject)[second];
-                if (Array.isArray(value)) continue;
-                if (value == null || typeof value !== "object") continue;
+                if (Array.isArray(value)) {continue;}
+                if (value == null || typeof value !== "object") {continue;}
                 const leaf = (value as ResolveObject)[third];
-                if (Array.isArray(leaf)) continue;
+                if (Array.isArray(leaf)) {continue;}
                 found = true;
-                if (!predicate(leaf as ResolveValue)) return false;
+                if (!predicate(leaf as ResolveValue)) {return false;}
             }
             return found;
         }
-        if (resolved == null || typeof resolved !== "object") return false;
+        if (resolved == null || typeof resolved !== "object") {return false;}
         const value = (resolved as ResolveObject)[second];
         if (Array.isArray(value)) {
             for (let i = 0; i < value.length; i++) {
-                const entry = value[i] as ResolveValue;
-                if (entry == null || typeof entry !== "object") continue;
+                const entry = value[i];
+                if (entry == null || typeof entry !== "object") {continue;}
                 const leaf = (entry as ResolveObject)[third];
-                if (Array.isArray(leaf)) continue;
+                if (Array.isArray(leaf)) {continue;}
                 found = true;
-                if (!predicate(leaf as ResolveValue)) return false;
+                if (!predicate(leaf as ResolveValue)) {return false;}
             }
             return found;
         }
-        if (value == null || typeof value !== "object") return false;
+        if (value == null || typeof value !== "object") {return false;}
         const leaf = (value as ResolveObject)[third];
         if (Array.isArray(leaf)) {
-            if (leaf.length === 0) return false;
+            if (leaf.length === 0) {return false;}
             for (let i = 0; i < leaf.length; i++) {
-                if (!predicate(leaf[i] as ResolveValue)) return false;
+                if (!predicate(leaf[i])) {return false;}
             }
             return true;
         }
         return predicate(leaf as ResolveValue);
     }
 
-    let current: ResolveValue[] = [obj as ResolveValue];
-    let next: ResolveValue[] = [];
+    let current: Array<ResolveValue> = [obj as ResolveValue];
+    let next: Array<ResolveValue> = [];
     let seenArray = false;
     let found = false;
 
@@ -483,34 +483,34 @@ export function everyResolvedWithSegments(
 
         for (let j = 0; j < current.length; j++) {
             const value = current[j];
-            if (value == null) continue;
-            if (typeof value !== "object") continue;
+            if (value == null) {continue;}
+            if (typeof value !== "object") {continue;}
 
             const resolved = (value as ResolveObject)[segment];
 
             if (Array.isArray(resolved)) {
-                if (seenArray) continue;
-                if (!isLast) seenArray = true;
+                if (seenArray) {continue;}
+                if (!isLast) {seenArray = true;}
                 if (isLast) {
-                    if (resolved.length === 0) continue;
+                    if (resolved.length === 0) {continue;}
                     for (let k = 0; k < resolved.length; k++) {
                         found = true;
-                        if (!predicate(resolved[k] as ResolveValue)) return false;
+                        if (!predicate(resolved[k])) {return false;}
                     }
                 } else {
                     for (let k = 0; k < resolved.length; k++) {
-                        next[nextIndex++] = resolved[k] as ResolveValue;
+                        next[nextIndex++] = resolved[k];
                     }
                 }
             } else if (isLast) {
                 found = true;
-                if (!predicate(resolved as ResolveValue)) return false;
+                if (!predicate(resolved as ResolveValue)) {return false;}
             } else {
                 next[nextIndex++] = resolved as ResolveValue;
             }
         }
 
-        if (isLast) return found;
+        if (isLast) {return found;}
 
         next.length = nextIndex;
         const temp = current;
@@ -521,14 +521,14 @@ export function everyResolvedWithSegments(
     return found;
 }
 
-export function pathExistsWithSegments(obj: ResolveObject, segments: string[]): boolean {
+export function pathExistsWithSegments(obj: ResolveObject, segments: Array<string>): boolean {
     if (segments.length === 1) {
         const segment = segments[0]!;
-        if (obj == null || typeof obj !== "object") return false;
-        return Object.prototype.hasOwnProperty.call(obj as ResolveObject, segment);
+        if (obj == null || typeof obj !== "object") {return false;}
+        return Object.hasOwn(obj, segment);
     }
-    let current: ResolveValue[] = [obj as ResolveValue];
-    let next: ResolveValue[] = [];
+    let current: Array<ResolveValue> = [obj as ResolveValue];
+    let next: Array<ResolveValue> = [];
     let seenArray = false;
 
     for (let i = 0; i < segments.length; i++) {
@@ -538,19 +538,19 @@ export function pathExistsWithSegments(obj: ResolveObject, segments: string[]): 
 
         for (let j = 0; j < current.length; j++) {
             const value = current[j];
-            if (value == null) continue;
-            if (typeof value !== "object") continue;
+            if (value == null) {continue;}
+            if (typeof value !== "object") {continue;}
 
             const objValue = value as ResolveObject;
-            if (!Object.prototype.hasOwnProperty.call(objValue, segment)) continue;
+            if (! Object.hasOwn(objValue, segment)) {continue;}
             const resolved = objValue[segment];
-            if (isLast) return true;
+            if (isLast) {return true;}
 
             if (Array.isArray(resolved)) {
-                if (seenArray) continue;
+                if (seenArray) {continue;}
                 seenArray = true;
                 for (let k = 0; k < resolved.length; k++) {
-                    next[nextIndex++] = resolved[k] as ResolveValue;
+                    next[nextIndex++] = resolved[k];
                 }
             } else {
                 next[nextIndex++] = resolved as ResolveValue;
@@ -568,10 +568,10 @@ export function pathExistsWithSegments(obj: ResolveObject, segments: string[]): 
 
 export function resolveOrderValueWithSegments(
     obj: ResolveObject,
-    segments: string[],
+    segments: Array<string>,
     resolve: ResolveSortKey
 ): SortKey | null {
     const value = resolveFirstWithSegments(obj, segments);
-    if (value === undefined || value === null) return null;
+    if (value === undefined || value === null) {return null;}
     return resolve(value);
 }

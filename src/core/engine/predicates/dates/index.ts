@@ -1,4 +1,4 @@
-import type { ResolvePredicate, ResolveValue } from "@/types";
+import type { ResolvePredicate } from "@/types";
 import { toTimestamp } from "@/core/shared/cache";
 
 export function createDateEqualsPredicate(
@@ -6,10 +6,10 @@ export function createDateEqualsPredicate(
     right: Date | string | number
 ): ResolvePredicate | null {
     const rightTimestamp = toTimestamp(right, parseIsoDate);
-    if (rightTimestamp === null || Number.isNaN(rightTimestamp)) return null;
+    if (rightTimestamp === null || Number.isNaN(rightTimestamp)) {return null;}
     return (value) => {
         const leftTimestamp = toTimestamp(value, parseIsoDate);
-        if (leftTimestamp === null) return false;
+        if (leftTimestamp === null) {return false;}
         return leftTimestamp === rightTimestamp;
     };
 }
@@ -20,12 +20,12 @@ export function createDateComparePredicate(
     op: "gt" | "gte" | "lt" | "lte"
 ): ResolvePredicate | null {
     const rightTimestamp = toTimestamp(right, parseIsoDate);
-    if (rightTimestamp === null || Number.isNaN(rightTimestamp)) return null;
+    if (rightTimestamp === null || Number.isNaN(rightTimestamp)) {return null;}
 
     if (op === "gt") {
         return (value) => {
             const leftTimestamp = toTimestamp(value, parseIsoDate);
-            if (leftTimestamp === null) return false;
+            if (leftTimestamp === null) {return false;}
             return leftTimestamp > rightTimestamp;
         };
     }
@@ -33,7 +33,7 @@ export function createDateComparePredicate(
     if (op === "gte") {
         return (value) => {
             const leftTimestamp = toTimestamp(value, parseIsoDate);
-            if (leftTimestamp === null) return false;
+            if (leftTimestamp === null) {return false;}
             return leftTimestamp >= rightTimestamp;
         };
     }
@@ -41,14 +41,14 @@ export function createDateComparePredicate(
     if (op === "lt") {
         return (value) => {
             const leftTimestamp = toTimestamp(value, parseIsoDate);
-            if (leftTimestamp === null) return false;
+            if (leftTimestamp === null) {return false;}
             return leftTimestamp < rightTimestamp;
         };
     }
 
     return (value) => {
         const leftTimestamp = toTimestamp(value, parseIsoDate);
-        if (leftTimestamp === null) return false;
+        if (leftTimestamp === null) {return false;}
         return leftTimestamp <= rightTimestamp;
     };
 }
@@ -71,7 +71,7 @@ export function createDateBetweenPredicate(
 
     return (value) => {
         const valueTimestamp = toTimestamp(value, parseIsoDate);
-        if (valueTimestamp === null) return false;
+        if (valueTimestamp === null) {return false;}
         return valueTimestamp >= minTimestamp && valueTimestamp <= maxTimestamp;
     };
 }

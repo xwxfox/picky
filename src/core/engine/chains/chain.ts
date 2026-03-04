@@ -2,12 +2,12 @@ import type { Predicate } from "@/types";
 import type { Schema } from "@/io/schema";
 import { IngressEngine } from "@/io/ingress";
 import { QueryBuilder } from "@/core/engine/builder";
-import { EgressEngine } from "@/io/egress";
+import type { EgressEngine } from "@/io/egress";
 
 export type QueryChainPlan<T extends Record<string, unknown>> = {
-    id: string;
     hash: string;
-    predicates: Predicate<T>[];
+    id: string;
+    predicates: Array<Predicate<T>>;
     schema?: Schema<T>;
 };
 
@@ -34,8 +34,8 @@ export class QueryChain<T extends Record<string, unknown>> {
         }
         const id = `chain_${hash}`;
         const chainPlan: QueryChainPlan<T> = {
-            id,
             hash,
+            id,
             predicates: plan.predicates,
             schema,
         };
@@ -60,13 +60,13 @@ export class QueryChain<T extends Record<string, unknown>> {
     }
 }
 
-export interface ChainConfig<T extends Record<string, unknown>> {
+export type ChainConfig<T extends Record<string, unknown>> = {
     name: string;
     predicate: Predicate<T>;
 }
 
 export class ChainRegistry<T extends Record<string, unknown>> {
-    private chains: Map<string, Predicate<T>> = new Map();
+    private chains = new Map<string, Predicate<T>>();
 
     register(name: string, predicate: Predicate<T>): void {
         this.chains.set(name, predicate);
@@ -88,8 +88,8 @@ export class ChainRegistry<T extends Record<string, unknown>> {
         this.chains.clear();
     }
 
-    names(): string[] {
-        return Array.from(this.chains.keys());
+    names(): Array<string> {
+        return [...this.chains.keys()];
     }
 }
 

@@ -4,15 +4,21 @@ import type { ResolveValue } from "@/types/core";
 const isoDateRegex = /^\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?)?$/;
 
 export type CacheState = {
-    maxDateCache: number;
-    maxPathCache: number;
-    pathSegmentsCache: Map<string, string[]>;
     dateCache: Map<string, number | null>;
-    parseIsoDate: (value: string) => number | null;
-    orderResolver: ResolveSortKey;
-    orderResolverDate: ResolveSortKey;
     groupKeyConverter: (value: ResolveValue) => GroupKeyValue | null;
     groupKeyConverterDate: (value: ResolveValue) => GroupKeyValue | null;
+    maxDateCache: number;
+    maxPathCache: number;
+    orderResolver: ResolveSortKey;
+    orderResolverDate: ResolveSortKey;
+    parseIsoDate: (value: string) => number | null;
+    pathSegmentsCache: Map<string, Array<string>>;
+    searchCache: SearchCache;
+};
+
+export type SearchCache = {
+    maskCache: Map<string, number>;
+    normalizeCache: WeakMap<(value: string) => string, Map<string, string>>;
 };
 
 export const defaultCacheOptions: CacheOptions = {
@@ -42,7 +48,7 @@ export function setSharedCacheState(state: CacheState | null): void {
 function createDateCache(cache: Map<string, number | null>, maxDateCache: number) {
     return (value: string): number | null => {
         const cached = cache.get(value);
-        if (cached !== undefined) return cached;
+        if (cached !== undefined) {return cached;}
 
         if (value.length < 10 || !isoDateRegex.test(value)) {
             cache.set(value, null);
@@ -54,8 +60,8 @@ function createDateCache(cache: Map<string, number | null>, maxDateCache: number
         cache.set(value, result);
 
         while (cache.size > maxDateCache) {
-            const firstKey = cache.keys().next().value as string | undefined;
-            if (firstKey !== undefined) cache.delete(firstKey);
+            const firstKey = cache.keys().next().value;
+            if (firstKey !== undefined) {cache.delete(firstKey);}
         }
 
         return result;
@@ -63,8 +69,12 @@ function createDateCache(cache: Map<string, number | null>, maxDateCache: number
 }
 
 export function createCacheState(options: CacheOptions): CacheState {
-    const pathSegmentsCache = new Map<string, string[]>();
+    const pathSegmentsCache = new Map<string, Array<string>>();
     const dateCache = new Map<string, number | null>();
+    const searchCache: SearchCache = {
+        maskCache: new Map<string, number>(),
+        normalizeCache: new WeakMap<(value: string) => string, Map<string, string>>(),
+    };
     const parseIsoDate = createDateCache(dateCache, options.maxDateCache);
     const orderResolver = createOrderResolver();
     const orderResolverDate = createOrderResolverDate(parseIsoDate);
@@ -72,15 +82,16 @@ export function createCacheState(options: CacheOptions): CacheState {
     const groupKeyConverterDate = createGroupKeyConverterDate(parseIsoDate);
 
     return {
-        maxDateCache: options.maxDateCache,
-        maxPathCache: options.maxPathCache,
-        pathSegmentsCache,
         dateCache,
-        parseIsoDate,
-        orderResolver,
-        orderResolverDate,
         groupKeyConverter,
         groupKeyConverterDate,
+        maxDateCache: options.maxDateCache,
+        maxPathCache: options.maxPathCache,
+        orderResolver,
+        orderResolverDate,
+        parseIsoDate,
+        pathSegmentsCache,
+        searchCache,
     };
 }
 
@@ -90,29 +101,29 @@ export function toTimestamp(value: unknown, parseIsoDate: (value: string) => num
         return Number.isNaN(time) ? null : time;
     }
 
-    if (typeof value === "number") return value;
+    if (typeof value === "number") {return value;}
 
-    if (typeof value !== "string") return null;
+    if (typeof value !== "string") {return null;}
     return parseIsoDate(value);
 }
 
-export function getSegments(cache: CacheState, path: string): string[] {
+export function getSegments(cache: CacheState, path: string): Array<string> {
     const cached = cache.pathSegmentsCache.get(path);
-    if (cached) return cached;
+    if (cached) {return cached;}
     const segments = path.split(".");
     cache.pathSegmentsCache.set(path, segments);
     while (cache.pathSegmentsCache.size > cache.maxPathCache) {
-        const firstKey = cache.pathSegmentsCache.keys().next().value as string | undefined;
-        if (firstKey !== undefined) cache.pathSegmentsCache.delete(firstKey);
+        const firstKey = cache.pathSegmentsCache.keys().next().value;
+        if (firstKey !== undefined) {cache.pathSegmentsCache.delete(firstKey);}
     }
     return segments;
 }
 
 function createOrderResolver(): ResolveSortKey {
     return (value) => {
-        if (typeof value === "number") return Number.isNaN(value) ? null : value;
-        if (typeof value === "string") return value;
-        if (typeof value === "bigint") return value;
+        if (typeof value === "number") {return Number.isNaN(value) ? null : value;}
+        if (typeof value === "string") {return value;}
+        if (typeof value === "bigint") {return value;}
         if (value instanceof Date) {
             const time = value.getTime();
             return Number.isNaN(time) ? null : time;
@@ -127,20 +138,20 @@ function createOrderResolverDate(parseIsoDate: (value: string) => number | null)
             const time = value.getTime();
             return Number.isNaN(time) ? null : time;
         }
-        if (typeof value === "number") return Number.isNaN(value) ? null : value;
-        if (typeof value === "string") return parseIsoDate(value);
+        if (typeof value === "number") {return Number.isNaN(value) ? null : value;}
+        if (typeof value === "string") {return parseIsoDate(value);}
         return null;
     };
 }
 
 function createGroupKeyConverter() {
     return (value: ResolveValue): GroupKeyValue | null => {
-        if (value == null) return null;
-        if (typeof value === "string") return value;
-        if (typeof value === "number") return Number.isNaN(value) ? null : value;
-        if (typeof value === "boolean") return value;
-        if (typeof value === "bigint") return value;
-        if (typeof value === "symbol") return value;
+        if (value == null) {return null;}
+        if (typeof value === "string") {return value;}
+        if (typeof value === "number") {return Number.isNaN(value) ? null : value;}
+        if (typeof value === "boolean") {return value;}
+        if (typeof value === "bigint") {return value;}
+        if (typeof value === "symbol") {return value;}
         if (value instanceof Date) {
             const time = value.getTime();
             return Number.isNaN(time) ? null : time;
@@ -151,16 +162,16 @@ function createGroupKeyConverter() {
 
 function createGroupKeyConverterDate(parseIsoDate: (value: string) => number | null) {
     return (value: ResolveValue): GroupKeyValue | null => {
-        if (value == null) return null;
+        if (value == null) {return null;}
         if (value instanceof Date) {
             const time = value.getTime();
             return Number.isNaN(time) ? null : time;
         }
-        if (typeof value === "number") return Number.isNaN(value) ? null : value;
-        if (typeof value === "string") return parseIsoDate(value);
-        if (typeof value === "boolean") return value;
-        if (typeof value === "bigint") return value;
-        if (typeof value === "symbol") return value;
+        if (typeof value === "number") {return Number.isNaN(value) ? null : value;}
+        if (typeof value === "string") {return parseIsoDate(value);}
+        if (typeof value === "boolean") {return value;}
+        if (typeof value === "bigint") {return value;}
+        if (typeof value === "symbol") {return value;}
         return null;
     };
 }
