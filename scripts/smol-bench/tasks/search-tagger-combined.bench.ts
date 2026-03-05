@@ -4,8 +4,8 @@ import type { BenchSchema } from "../schema";
 import { tags } from "../random_data";
 
 export const schema: BenchSchema = {
-    name: "search-tagger-combined",
     datasets: [{ key: "large-items", size: 80_000, seed: 808 }],
+    name: "search-tagger-combined",
 };
 
 export const run = async () => {
@@ -20,13 +20,13 @@ export const run = async () => {
             ],
         })
         .configureTagger({
-            tags,
             rules: [
                 { tag: "red", field: "flags", equals: "red" },
                 { tag: "blue", field: "flags", equals: "blue" },
                 { tag: "green", field: "flags", equals: "green" },
                 { tag: "amber", field: "flags", equals: "amber" },
             ],
+            tags,
         });
 
     const start = performance.now();

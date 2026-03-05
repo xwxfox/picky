@@ -1428,6 +1428,25 @@ describe("Ingress + schema helpers", () => {
         expect(loadedFrom.length).toEqual(2);
     });
 
+    it("async ingress load, loadFrom, length, isEmpty", async () => {
+        const source = IngressEngine.fromSource({
+            hints: { estimatedCount: data.length },
+            mode: "async",
+            stream: async function* () {
+                for (let i = 0; i < data.length; i++) {yield data[i]!;}
+            },
+        });
+        if (source.mode !== "async") {throw new Error("Expected async ingress.");}
+        expect(source.length).toEqual(data.length);
+        expect(source.isEmpty()).toEqual(false);
+
+        const loaded = await source.load(data.slice(0, 1));
+        expect(loaded.length).toEqual(1);
+
+        const loadedFrom = await source.loadFrom({ payload: data.slice(0, 2) }, (input) => input.payload);
+        expect(loadedFrom.length).toEqual(2);
+    });
+
     it("ingress create respects shared cache usage", () => {
         IngressEngine.configure({ maxDateCache: 2, maxPathCache: 2, sharedCache: true });
         const a = IngressEngine.create<SampleItem>();

@@ -5,8 +5,8 @@ import type { BenchSchema } from "../schema";
 import { getRandomNamesArray } from "../random_data";
 
 export const schema: BenchSchema = {
-    name: "12k",
     datasets: [{ key: "large-items", size: 12_000, seed: 1337 }],
+    name: "12k",
 };
 
 export const run = async () => {

@@ -53,7 +53,7 @@ const data: Array<Ticket> = [
     },
     {
         active: false,
-        created: 1765000000000,
+        created: 1_765_000_000_000,
         flags: ["vip"],
         id: 103,
         logs: [

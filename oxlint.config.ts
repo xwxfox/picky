@@ -11,6 +11,8 @@ export default defineConfig({
             files: ["**/*.test.ts"],
             rules: {
                 "eslint-plugin-unicorn/consistent-function-scoping": "off",
+                "perfectionist/sort-objects": "off",
+                "eslint/no-console": "off",
             }
         },
         {
@@ -26,8 +28,9 @@ export default defineConfig({
         "eslint/no-console": "warn",
         "eslint/no-plusplus": "off",
         "perfectionist/sort-object-types": "off",
+        "perfectionist/sort-objects": "off",
         "typescript-eslint/no-restricted-types": "off",
         "typescript-eslint/prefer-for-of": "off",
-        "typescript/no-empty-object-type": "off"
+        "typescript/no-empty-object-type": "off",
     }
 });

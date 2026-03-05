@@ -177,13 +177,13 @@ export function compileTaggerConfig<T, Tags extends string>(
             continue;
         }
         if ("in" in rule) {
-            inRules.push({ accessors: getPathAccessors(cache, String(rule.field)), value: new Set(rule.in as Array<ResolveValue>), tagIndex });
+            inRules.push({ accessors: getPathAccessors(cache, String(rule.field)), tagIndex, value: new Set(rule.in as Array<ResolveValue>) });
             continue;
         }
         if ("contains" in rule) {
             stringRules.push({
-                op: "contains",
                 accessors: getPathAccessors(cache, String(rule.field)),
+                op: "contains",
                 tagIndex,
                 value: normalize(rule.contains),
             });
@@ -191,8 +191,8 @@ export function compileTaggerConfig<T, Tags extends string>(
         }
         if ("startsWith" in rule) {
             stringRules.push({
-                op: "startsWith",
                 accessors: getPathAccessors(cache, String(rule.field)),
+                op: "startsWith",
                 tagIndex,
                 value: normalize(rule.startsWith),
             });
@@ -200,8 +200,8 @@ export function compileTaggerConfig<T, Tags extends string>(
         }
         if ("endsWith" in rule) {
             stringRules.push({
-                op: "endsWith",
                 accessors: getPathAccessors(cache, String(rule.field)),
+                op: "endsWith",
                 tagIndex,
                 value: normalize(rule.endsWith),
             });
@@ -224,8 +224,8 @@ export function compileTaggerConfig<T, Tags extends string>(
             accessors,
             equals: [],
             in: [],
-            string: [],
             regex: [],
+            string: [],
         };
         grouped.set(accessors, created);
         return created;
@@ -237,28 +237,28 @@ export function compileTaggerConfig<T, Tags extends string>(
     }
     for (let i = 0; i < inRules.length; i++) {
         const rule = inRules[i]!;
-        ensureGroup(rule.accessors).in.push({ tagIndex: rule.tagIndex, set: rule.value });
+        ensureGroup(rule.accessors).in.push({ set: rule.value, tagIndex: rule.tagIndex });
     }
     for (let i = 0; i < stringRules.length; i++) {
         const rule = stringRules[i]!;
-        ensureGroup(rule.accessors).string.push({ tagIndex: rule.tagIndex, op: rule.op, value: rule.value });
+        ensureGroup(rule.accessors).string.push({ op: rule.op, tagIndex: rule.tagIndex, value: rule.value });
     }
     for (let i = 0; i < regexRules.length; i++) {
         const rule = regexRules[i]!;
-        ensureGroup(rule.accessors).regex.push({ tagIndex: rule.tagIndex, regex: rule.value });
+        ensureGroup(rule.accessors).regex.push({ regex: rule.value, tagIndex: rule.tagIndex });
     }
 
     return {
         customNormalize: config.normalize !== undefined,
         equalsRules,
+        grouped: { order: [...grouped.values()] },
+        indexOfTag,
         inRules,
         normalize,
         regexRules,
         strict: config.strict ?? true,
         stringRules,
         tags,
-        indexOfTag,
-        grouped: { order: [...grouped.values()] },
     };
 }
 
@@ -386,6 +386,7 @@ export function executeSearchPipeline<T, C extends SearchCapabilityState>(
     const fuzzyQuery = fuzzyInput ? activeNormalize(fuzzyInput.query) : "";
     const fuzzyMask = fuzzyInput ? queryMask(fuzzyQuery) : 0;
     const fuzzyMinScore = fuzzyInput?.minScore ?? fuzzyConfig?.minScore ?? (fuzzyConfig?.requireAll ? 1 : 0);
+    const hasScoreOrder = fuzzyInput && fuzzyConfig && (fuzzyConfig.order === "score" || fuzzyConfig.order === "scoreThenOrder");
 
     const tagMask = taggerConfig
         ? buildTagMask(taggerConfig.indexOfTag, query.tags)
@@ -424,8 +425,10 @@ export function executeSearchPipeline<T, C extends SearchCapabilityState>(
         }
 
         results.push(item);
-        if (includeMetadata) {
+        if (includeMetadata || hasScoreOrder) {
             scores.push(score);
+        }
+        if (includeMetadata) {
             tagMasks.push(tagsMaskValue);
         }
     }
@@ -457,4 +460,213 @@ export function executeSearchPipeline<T, C extends SearchCapabilityState>(
     return includeMetadata
         ? { items: results, scores, tagMasks }
         : { items: results };
+}
+
+export async function executeSearchPipelineAsync<T, C extends SearchCapabilityState>(
+    data: AsyncIterable<T>,
+    predicates: ReadonlyArray<Predicate<T>>,
+    predicateFn: ((item: T) => boolean) | null,
+    cache: CacheState,
+    fuzzyConfig: CompiledFuzzyConfig<T> | null,
+    taggerConfig: CompiledTaggerConfig<T, AvailableTags<C>> | null,
+    filters: ReadonlyArray<SearchFilterState>,
+    includeMetadata: boolean,
+    windowLimit?: number
+): Promise<SearchResult<T>> {
+    const query: SearchQuery<string> = {};
+    for (let i = 0; i < filters.length; i++) {
+        const filter = filters[i]!;
+        if (filter.fuzzy !== undefined) {query.fuzzy = filter.fuzzy;}
+        if (filter.tags !== undefined) {query.tags = filter.tags;}
+    }
+
+    const fuzzyInput = parseFuzzyInput(query.fuzzy);
+    const activeNormalize = fuzzyConfig?.normalize ?? defaultNormalize;
+    const fuzzyQuery = fuzzyInput ? activeNormalize(fuzzyInput.query) : "";
+    const fuzzyMask = fuzzyInput ? queryMask(fuzzyQuery) : 0;
+    const fuzzyMinScore = fuzzyInput?.minScore ?? fuzzyConfig?.minScore ?? (fuzzyConfig?.requireAll ? 1 : 0);
+    const hasScoreOrder = fuzzyInput && fuzzyConfig && (fuzzyConfig.order === "score" || fuzzyConfig.order === "scoreThenOrder");
+
+    const tagMask = taggerConfig
+        ? buildTagMask(taggerConfig.indexOfTag, query.tags)
+        : { any: 0, forbidden: 0, notAny: 0, required: 0 };
+
+    const results: Array<T> = [];
+    const scores: Array<number> = [];
+    const tagMasks: Array<number> = [];
+
+    const hasPredicateFn = predicateFn !== null;
+    const normalizeCache = fuzzyConfig ? getNormalizeCache(cache, fuzzyConfig.normalize) : null;
+    const maskCache = cache.searchCache.maskCache;
+
+    if (hasScoreOrder) {
+        const limit = windowLimit ?? 0;
+        const heap: Array<{ index: number; item: T; score: number; tagMask: number }> = [];
+        let index = 0;
+        for await (const item of data) {
+            if (hasPredicateFn) {
+                if (!predicateFn!(item)) {index++; continue;}
+            } else {
+                let ok = true;
+                for (let p = 0; p < predicates.length; p++) {
+                    if (!predicates[p]!(item)) {ok = false; break;}
+                }
+                if (!ok) {index++; continue;}
+            }
+
+            let score = 0;
+            if (fuzzyInput && fuzzyConfig) {
+                score = runFuzzy(fuzzyConfig, item, fuzzyQuery, fuzzyMask, normalizeCache!, maskCache);
+                if (fuzzyConfig.requireAll && score <= 0) {index++; continue;}
+                if (score < fuzzyMinScore) {index++; continue;}
+            }
+
+            let tagsMaskValue = 0;
+            if (taggerConfig) {
+                tagsMaskValue = runTagger(cache, taggerConfig, item);
+                if (!matchesTagFilter(tagsMaskValue, tagMask.required, tagMask.forbidden, tagMask.any, tagMask.notAny)) {
+                    index++; continue;
+                }
+            }
+
+            if (limit <= 0) {
+                results.push(item);
+                scores.push(score);
+                if (includeMetadata) {
+                    tagMasks.push(tagsMaskValue);
+                }
+                index++;
+                continue;
+            }
+
+            insertTopN(heap, { index, item, score, tagMask: tagsMaskValue }, limit);
+            index++;
+        }
+
+        if (limit <= 0) {
+            const indices = new Array(results.length);
+            for (let i = 0; i < indices.length; i++) {indices[i] = i;}
+            indices.sort((a, b) => {
+                const diff = (scores[b] ?? 0) - (scores[a] ?? 0);
+                if (diff !== 0) {return diff;}
+                return a - b;
+            });
+            const orderedItems: Array<T> = [];
+            const orderedScores: Array<number> = [];
+            const orderedMasks: Array<number> = [];
+            for (let i = 0; i < indices.length; i++) {
+                const idx = indices[i]!;
+                orderedItems.push(results[idx]!);
+                if (includeMetadata) {
+                    orderedScores.push(scores[idx]!);
+                    orderedMasks.push(tagMasks[idx]!);
+                }
+            }
+            return includeMetadata
+                ? { items: orderedItems, scores: orderedScores, tagMasks: orderedMasks }
+                : { items: orderedItems };
+        }
+
+        heap.sort((a, b) => {
+            const diff = b.score - a.score;
+            if (diff !== 0) {return diff;}
+            return a.index - b.index;
+        });
+        for (let i = 0; i < heap.length; i++) {
+            results.push(heap[i]!.item);
+            if (includeMetadata) {
+                scores.push(heap[i]!.score);
+                tagMasks.push(heap[i]!.tagMask);
+            }
+        }
+
+        return includeMetadata
+            ? { items: results, scores, tagMasks }
+            : { items: results };
+    }
+
+    let index = 0;
+    for await (const item of data) {
+        if (hasPredicateFn) {
+            if (!predicateFn!(item)) {index++; continue;}
+        } else {
+            let ok = true;
+            for (let p = 0; p < predicates.length; p++) {
+                if (!predicates[p]!(item)) {ok = false; break;}
+            }
+            if (!ok) {index++; continue;}
+        }
+
+        let score = 0;
+        if (fuzzyInput && fuzzyConfig) {
+            score = runFuzzy(fuzzyConfig, item, fuzzyQuery, fuzzyMask, normalizeCache!, maskCache);
+            if (fuzzyConfig.requireAll && score <= 0) {index++; continue;}
+            if (score < fuzzyMinScore) {index++; continue;}
+        }
+
+        let tagsMaskValue = 0;
+        if (taggerConfig) {
+            tagsMaskValue = runTagger(cache, taggerConfig, item);
+            if (!matchesTagFilter(tagsMaskValue, tagMask.required, tagMask.forbidden, tagMask.any, tagMask.notAny)) {
+                index++; continue;
+            }
+        }
+
+        results.push(item);
+        if (includeMetadata) {
+            scores.push(score);
+            tagMasks.push(tagsMaskValue);
+        }
+        index++;
+        if (windowLimit && windowLimit > 0 && results.length >= windowLimit) {break;}
+    }
+
+    return includeMetadata
+        ? { items: results, scores, tagMasks }
+        : { items: results };
+}
+
+function insertTopN<T>(
+    heap: Array<{ index: number; item: T; score: number; tagMask: number }>,
+    entry: { index: number; item: T; score: number; tagMask: number },
+    limit: number
+): void {
+    if (heap.length < limit) {
+        heap.push(entry);
+        let idx = heap.length - 1;
+        while (idx > 0) {
+            const parent = (idx - 1) >> 1;
+            if (compareTopN(heap[idx]!, heap[parent]!) <= 0) {break;}
+            const temp = heap[parent]!;
+            heap[parent] = heap[idx]!;
+            heap[idx] = temp;
+            idx = parent;
+        }
+        return;
+    }
+
+    if (compareTopN(entry, heap[0]!) <= 0) {return;}
+    heap[0] = entry;
+    let idx = 0;
+    const length = heap.length;
+    while (true) {
+        const left = (idx << 1) + 1;
+        if (left >= length) {break;}
+        const right = left + 1;
+        let next = left;
+        if (right < length && compareTopN(heap[right]!, heap[left]!) > 0) {next = right;}
+        if (compareTopN(heap[next]!, heap[idx]!) <= 0) {break;}
+        const temp = heap[idx]!;
+        heap[idx] = heap[next]!;
+        heap[next] = temp;
+        idx = next;
+    }
+}
+
+function compareTopN(
+    left: { index: number; score: number },
+    right: { index: number; score: number }
+): number {
+    if (left.score !== right.score) {return left.score - right.score;}
+    return right.index - left.index;
 }

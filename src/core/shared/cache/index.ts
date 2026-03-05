@@ -94,8 +94,8 @@ export function createCacheState(options: CacheOptions): CacheState {
         orderResolver,
         orderResolverDate,
         parseIsoDate,
-        pathSegmentsCache,
         pathAccessorsCache,
+        pathSegmentsCache,
         searchCache,
     };
 }

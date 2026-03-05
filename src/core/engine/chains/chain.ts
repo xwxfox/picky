@@ -1,5 +1,6 @@
 import type { Predicate } from "@/types";
 import type { Schema } from "@/io/schema";
+import type { DefaultSearchCapabilityState } from "@/types/search";
 import { IngressEngine } from "@/io/ingress";
 import { QueryBuilder } from "@/core/engine/builder";
 import type { EgressEngine } from "@/io/egress";
@@ -22,7 +23,7 @@ export class QueryChain<T extends Record<string, unknown>> {
 
     static from<T extends Record<string, unknown>>(
         schema: Schema<T>,
-        builder?: (q: QueryBuilder<T>) => QueryBuilder<T>
+        builder?: (q: QueryBuilder<T, DefaultSearchCapabilityState, "sync">) => QueryBuilder<T, DefaultSearchCapabilityState, "sync">
     ): QueryChain<T> {
         const ingress = IngressEngine.fromSchema(schema);
         const qb = builder ? builder(QueryBuilder.from(ingress)) : QueryBuilder.from(ingress);
@@ -43,7 +44,7 @@ export class QueryChain<T extends Record<string, unknown>> {
         return new QueryChain<T>(chainPlan);
     }
 
-    builder(ingress: IngressEngine<T>): QueryBuilder<T> {
+    builder(ingress: IngressEngine<T>): QueryBuilder<T, DefaultSearchCapabilityState, "sync"> {
         return QueryBuilder.from(ingress).use(this);
     }
 

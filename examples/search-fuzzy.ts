@@ -48,7 +48,7 @@ const fuzzy = Engine.from(ingress)
         requireAll: false,
     })
     .out()
-    .search({ fuzzy: { query: "timeout", minScore: 12 } })
+    .search({ fuzzy: { minScore: 12, query: "timeout" } })
     .resultWithMetadata();
 
 console.dir(fuzzy, { depth: null });

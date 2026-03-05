@@ -1,8 +1,10 @@
 import type { ResolvePredicate, ResolveValue } from "@/types";
 
+export type CompareOp = "gt" | "gte" | "lt" | "lte";
+
 export function createComparePredicate(
     value: ResolveValue,
-    op: "gt" | "gte" | "lt" | "lte"
+    op: CompareOp
 ): ResolvePredicate {
     if (typeof value === "number") {
         const right = value;

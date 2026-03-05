@@ -27,6 +27,9 @@ note: this is built for bun + typescript, zero runtime deps.
 - custom predicates if u wanna do cursed stuff manually
 - ordering, limiting, pagination, grouping
 - fuzzy search + tagger pipeline (optional + typed)
+- async ingress + streaming execution (stream or eager based on hints)
+- pushdown adapters (sqlite, redis, redis sorted set)
+- http ingress adapter + openapi schema inference
 
 > im still thinking of other stuff to add/improve - check NOTES.md (though its not really formatted for "others" and more for my ideas n stuff)
 
@@ -77,6 +80,9 @@ All fields + values are fully typesafe automatically
 - `examples/search-tagger.ts` tagger rules + tag filters
 - `examples/grouping-pagination.ts` ordering, paging, grouping
 - `examples/chains.ts` reusable chains + schema inference
+- `examples/async-ingress-search.ts` async ingress + fuzzy search
+- `examples/sqlite-pushdown.ts` sqlite ingress + pushdown order/filter
+- `examples/http-ingress.ts` http ingress adapter
 
 
 ## perf

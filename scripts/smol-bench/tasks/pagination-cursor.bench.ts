@@ -3,8 +3,8 @@ import { loadDataset } from "../data";
 import type { BenchSchema } from "../schema";
 
 export const schema: BenchSchema = {
-    name: "pagination-cursor",
     datasets: [{ key: "large-items", size: 80_000, seed: 404 }],
+    name: "pagination-cursor",
 };
 
 export const run = async () => {

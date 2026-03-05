@@ -3,8 +3,8 @@ import { loadDataset } from "../data";
 import type { BenchSchema } from "../schema";
 
 export const schema: BenchSchema = {
-    name: "throughput-filter",
     datasets: [{ key: "large-items", size: 50_000, seed: 2024 }],
+    name: "throughput-filter",
 };
 
 export const run = async () => {

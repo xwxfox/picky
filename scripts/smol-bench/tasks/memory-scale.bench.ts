@@ -3,12 +3,12 @@ import { loadDataset } from "../data";
 import type { BenchSchema } from "../schema";
 
 export const schema: BenchSchema = {
-    name: "memory-scale",
     datasets: [
         { key: "large-items", size: 10_000, seed: 9100 },
         { key: "large-items", size: 50_000, seed: 9500 },
-        { key: "large-items", size: 200_000, seed: 11000 },
+        { key: "large-items", size: 200_000, seed: 11_000 },
     ],
+    name: "memory-scale",
 };
 
 const sizes = [10_000, 50_000, 200_000];
@@ -22,7 +22,7 @@ export const run = async () => {
         const input = IngressEngine.from(data);
         const filter = Engine.from(input);
 
-        if (globalThis.gc) globalThis.gc();
+        if (globalThis.gc) {globalThis.gc();}
         const before = process.memoryUsage().heapUsed;
 
         const res = filter
@@ -33,7 +33,7 @@ export const run = async () => {
             .limit(100)
             .result();
 
-        if (globalThis.gc) globalThis.gc();
+        if (globalThis.gc) {globalThis.gc();}
         const after = process.memoryUsage().heapUsed;
 
         console.log(`size=${size} res=${res.length} heap=${formatBytes(after)} delta=${formatBytes(after - before)}`);

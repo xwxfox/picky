@@ -41,8 +41,8 @@ const tagged = Engine.from(ingress)
         rules: [
             { equals: "PAYMENT_FAILED", field: "type", tag: "billing" },
             { contains: "timeout", field: "message", tag: "infra" },
-            { in: ["WARN", "ERROR"], field: "severity", tag: "needs_followup" },
-            { matches: /@example\.internal$/, field: "user.email", tag: "internal" },
+            { field: "severity", in: ["WARN", "ERROR"], tag: "needs_followup" },
+            { field: "user.email", matches: /@example\.internal$/, tag: "internal" },
         ],
         tags: ["billing", "infra", "needs_followup", "internal"],
     })

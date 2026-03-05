@@ -3,8 +3,8 @@ import { loadDataset } from "../data";
 import type { BenchSchema } from "../schema";
 
 export const schema: BenchSchema = {
-    name: "order-topk",
     datasets: [{ key: "large-items", size: 120_000, seed: 777 }],
+    name: "order-topk",
 };
 
 export const run = async () => {

@@ -4,8 +4,8 @@ import type { BenchSchema } from "../schema";
 import { tags } from "../random_data";
 
 export const schema: BenchSchema = {
-    name: "tagger-filter",
     datasets: [{ key: "large-items", size: 50_000, seed: 505 }],
+    name: "tagger-filter",
 };
 
 export const run = async () => {
@@ -13,13 +13,13 @@ export const run = async () => {
     const input = IngressEngine.from(data);
 
     const filter = Engine.from(input).configureTagger({
-        tags,
         rules: [
             { tag: "red", field: "flags", equals: "red" },
             { tag: "blue", field: "flags", equals: "blue" },
             { tag: "green", field: "flags", equals: "green" },
             { tag: "amber", field: "flags", equals: "amber" },
         ],
+        tags,
     });
 
     const start = performance.now();

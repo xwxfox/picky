@@ -1,3 +1,14 @@
+# March 5, 2026
+Considering tradeoffs and possibilities / when to reach for bun:ffi c compiled queries
+
+In theory, we can map out a AOT engine that takes a execution plan, and produce C source code with the predicates that in return gives us a function which takes input[] and returns the result[] as the normal execution/egress engine does now - but where the actual filtering, sorting, etc is done in  C - this would be benefecial for large datasets alone i think, as compiling a c program on-the-fly in bun costs around 10-17ms depending on chain length/complexity / how well we can optimize it.
+
+though in some areas it would most def give us a ~3x perf boost - and allows us much greater control over the memory which also gives use more power for micro optimizations.
+
+It is however a double-edged sword as if we handle memory wrong, we explode - and if we are too eager to reach for the AOT path it will actually hurt performance more than we gain.
+
+for not to think of the actual complexity of doing this right as user-input -> code -> exec is not really "the greatest idea of all time" - especially if it somehow can get exploited to ACE/RCE on server surfaces if some weird part in schemas/filter controls are exposed to users in a way we dont expect.
+
 # sorting n stuff (added)
 We should consider adding methods for sorting, ordering, limiting etc in the engine
 

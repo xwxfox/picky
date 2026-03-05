@@ -3,8 +3,8 @@ import { loadDataset } from "../data";
 import type { BenchSchema } from "../schema";
 
 export const schema: BenchSchema = {
-    name: "search-fuzzy",
     datasets: [{ key: "large-items", size: 60_000, seed: 909 }],
+    name: "search-fuzzy",
 };
 
 export const run = async () => {

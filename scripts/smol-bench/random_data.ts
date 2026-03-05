@@ -1,11 +1,11 @@
-const { randomInt } = await import("node:crypto");
+const randomInt = (min: number, max: number) => Math.floor(Math.random() * (max - min)) + min;
 
 type LargeItem = {
     active: boolean;
     created: Date | string;
-    flags: string[];
+    flags: Array<string>;
     id: number;
-    Logs: Array<{ tags: string[]; type: string; when: Date | string }>;
+    Logs: Array<{ tags: Array<string>; type: string; when: Date | string }>;
     meta: {
         owner: {
             name: string;
@@ -43,37 +43,37 @@ const randomString = (len: number, randInt: (max: number) => number) => {
 const createRng = (seed: number) => {
     const rng = mulberry32(seed);
     const randInt = (max: number) => Math.floor(rng() * max);
-    return { randInt, next: rng };
+    return { next: rng, randInt };
 };
 
-const generateData = (count: number, seed = 1337): LargeItem[] => {
-    const { randInt, next } = createRng(seed);
-    const data: LargeItem[] = [];
+const generateData = (count: number, seed = 1337): Array<LargeItem> => {
+    const { next, randInt } = createRng(seed);
+    const data: Array<LargeItem> = [];
     for (let i = 0; i < count; i++) {
         const baseName = i % 7 === 0 ? `ab${randomString(4, randInt)}` : randomString(6, randInt);
         const name = i % 31 === 0 ? null : baseName;
         const score = i % 97 === 0 ? Number.NaN : randInt(50);
         const created = i % 2 === 0
-            ? new Date(2024, 0, (i % 28) + 1)
-            : `2024-01-${String((i % 28) + 1).padStart(2, "0")}T00:00:00.000Z`;
+            ? new Date(2026, 0, (i % 28) + 1)
+            : `2026-01-${String((i % 28) + 1).padStart(2, "0")}T00:00:00.000Z`;
         const owner = ownerNames[randInt(ownerNames.length)]!;
         const nick = next() > 0.8 ? `${owner[0]}${randInt(9)}` : null;
         const logCount = randInt(3);
-        const Logs: Array<{ tags: string[]; type: string; when: Date | string }> = [];
+        const Logs: Array<{ tags: Array<string>; type: string; when: Date | string }> = [];
         for (let j = 0; j < logCount; j++) {
             const type = logTypes[randInt(logTypes.length)]!;
             const tagCount = randInt(3);
-            const logTags: string[] = [];
+            const logTags: Array<string> = [];
             for (let k = 0; k < tagCount; k++) {
                 logTags.push(tags[randInt(tags.length)]!);
             }
             const when = j % 2 === 0
-                ? new Date(2024, 0, (i % 28) + 1)
-                : `2024-01-${String((i % 28) + 1).padStart(2, "0")}T00:00:00.000Z`;
+                ? new Date(2026, 0, (i % 28) + 1)
+                : `2026-01-${String((i % 28) + 1).padStart(2, "0")}T00:00:00.000Z`;
             Logs.push({ tags: logTags, type, when });
         }
         const flagCount = randInt(3);
-        const flags: string[] = [];
+        const flags: Array<string> = [];
         for (let j = 0; j < flagCount; j++) {
             flags.push(tags[randInt(tags.length)]!);
         }
@@ -92,10 +92,12 @@ const generateData = (count: number, seed = 1337): LargeItem[] => {
     return data;
 };
 
-const getRandomNamesArray = (): string[] => {
-    const out: string[] = [];
-    for (let i = 0; i < randomInt(1, ownerNames.length + 1); i++) {
-        out.push(ownerNames[randomInt(ownerNames.length)]!);
+const getRandomNamesArray = (): Array<string> => {
+    const upper = randomInt(1, ownerNames.length + 1);
+    const out: Array<string> = [];
+    for (let i = 0; i < upper; i++) {
+        const random = randomInt(0, ownerNames.length)
+        out.push(ownerNames[random]!);
     }
     return out;
 };
