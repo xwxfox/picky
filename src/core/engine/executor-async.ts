@@ -14,15 +14,20 @@ export class AsyncExecutionEngine<T extends Record<string, unknown>> {
         const hasSearch = plan.searchFilters.length > 0;
         const predicates = plan.predicates;
         const predicateFn = plan.predicateFn;
+        const residualPredicateFn = plan.residualPredicateFn;
+        if (plan.alwaysFalse) {
+            return [];
+        }
         const requiresGrouping = options?.requiresGrouping ?? false;
         const requiresOrdering = options?.requiresOrdering ?? false;
-        const shouldStream = planIngress(
+        const ingressPlan = planIngress(
             ingress.hints,
             ingress.capabilities,
             requiresOrdering,
             requiresGrouping,
             hasSearch
-        ).strategy === "stream";
+        );
+        const shouldStream = ingressPlan.strategy === "stream";
 
         const windowLimit = options?.windowLimit;
 
@@ -43,6 +48,15 @@ export class AsyncExecutionEngine<T extends Record<string, unknown>> {
                 return result.items;
             }
             const output: Array<T> = [];
+            if (residualPredicateFn && residualPredicateFn !== predicateFn) {
+                for (let i = 0; i < data.length; i++) {
+                    const item = data[i]!;
+                    if (!predicateFn(item)) {continue;}
+                    if (!residualPredicateFn(item)) {continue;}
+                    output.push(item);
+                }
+                return output;
+            }
             for (let i = 0; i < data.length; i++) {
                 const item = data[i]!;
                 if (!predicateFn(item)) {continue;}
@@ -85,12 +99,24 @@ export class AsyncExecutionEngine<T extends Record<string, unknown>> {
             const limit = windowLimit ?? 0;
             for await (const item of ingress.stream()) {
                 if (!predicateFn(item)) {continue;}
+                if (residualPredicateFn && residualPredicateFn !== predicateFn && !residualPredicateFn(item)) {
+                    continue;
+                }
                 output.push(item);
                 if (limit > 0 && output.length >= limit) {break;}
             }
             return output;
         }
         const data = await ingress.materialize();
+        if (residualPredicateFn && residualPredicateFn !== predicateFn) {
+            for (let i = 0; i < data.length; i++) {
+                const item = data[i]!;
+                if (!predicateFn(item)) {continue;}
+                if (!residualPredicateFn(item)) {continue;}
+                output.push(item);
+            }
+            return output;
+        }
         for (let i = 0; i < data.length; i++) {
             const item = data[i]!;
             if (!predicateFn(item)) {continue;}

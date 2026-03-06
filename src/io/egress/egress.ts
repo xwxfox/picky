@@ -19,6 +19,7 @@ import { getPathAccessors } from "@/core/shared/cache";
 import { resolveOrderValueWithSegments } from "@/core/shared/path";
 import { createComparator } from "@/core/engine/compare";
 import type { Orderable1, Orderable2, Orderable3, OrderableN, Orderable } from "@/core/engine/compare";
+import { logPlanner } from "@/core/engine/planner-logger";
 
 export type EgressMode = "sync" | "async";
 
@@ -37,7 +38,7 @@ export class EgressEngine<
     C extends SearchCapabilityState = SearchCapabilityState,
     M extends EgressMode = "sync"
 > {
-    private constructor(private readonly state: EgressState<T, M>) {}
+    private constructor(private readonly state: EgressState<T, M>) { }
 
     static from<T extends Record<string, unknown>, C extends SearchCapabilityState = SearchCapabilityState>(
         ingress: IngressEngine<T>,
@@ -75,7 +76,7 @@ export class EgressEngine<
 
     search(input: SearchInput<C>): EgressEngine<T, C, M> {
         if (!this.state.plan.fuzzyConfig && !this.state.plan.taggerConfig) {
-            if (this.state.plan.strictSearch) {throw new Error("search() used without configureFuzzy/configureTagger.");}
+            if (this.state.plan.strictSearch) { throw new Error("search() used without configureFuzzy/configureTagger."); }
             return this.clone({
                 searchFilters: [...this.state.searchFilters, { tags: { hasAny: [] } }],
             });
@@ -88,7 +89,7 @@ export class EgressEngine<
 
     tags(filter: TagFilter<AvailableTags<C>>): EgressEngine<T, C, M> {
         if (!this.state.plan.taggerConfig) {
-            if (this.state.plan.strictSearch) {throw new Error("tags() used without configureTagger.");}
+            if (this.state.plan.strictSearch) { throw new Error("tags() used without configureTagger."); }
             return this.clone({
                 searchFilters: [...this.state.searchFilters, { tags: { hasAny: [] } }],
             });
@@ -175,11 +176,33 @@ export class EgressEngine<
                 ...this.state.plan,
                 searchFilters: [...this.state.plan.searchFilters, ...this.state.searchFilters],
             };
+        logPlanner({
+            source: "egress",
+            type: "input",
+            planId: mergedPlan.id,
+            data: {
+                hasSearch: mergedPlan.searchFilters.length > 0,
+                orders: this.state.orders.length,
+                limit: this.state.limitCount,
+                offset: this.state.offsetCount,
+            },
+        });
         if (this.state.ingress instanceof Object && "mode" in this.state.ingress && this.state.ingress.mode === "async") {
             return this.executeAsync(mergedPlan);
         }
         const executor = new ExecutionEngine<T>();
         const filtered = executor.execute(this.state.ingress as IngressEngine<T>, mergedPlan);
+        logPlanner({
+            source: "egress",
+            type: "final",
+            planId: mergedPlan.id,
+            data: {
+                mode: "sync",
+                hasSearch: mergedPlan.searchFilters.length > 0,
+                residualPredicates: mergedPlan.residualPredicates?.length ?? 0,
+                resultCount: filtered.length,
+            },
+        });
         return finalizeOrderAndWindow(filtered, this.state.orders, this.state.limitCount, this.state.offsetCount);
     }
 
@@ -190,10 +213,11 @@ export class EgressEngine<
         const windowLimit = limit !== null ? limit + offset : undefined;
         const ingress = this.state.ingress as AsyncIngressEngine<T>;
         const hasSearch = plan.searchFilters.length > 0;
+        const hasResidual = !!(plan.residualPredicates && plan.residualPredicates.length > 0);
 
         if (
             ingress.source.pushdown
-            && plan.pushdownSafe
+            && !hasResidual
             && !hasSearch
             && this.state.searchFilters.length === 0
             && !(offset > 0 && limit === null)
@@ -204,12 +228,57 @@ export class EgressEngine<
                 orders: this.state.pushdownOrders.length > 0 ? this.state.pushdownOrders : undefined,
                 predicates: plan.pushdownPredicates.length > 0 ? plan.pushdownPredicates : undefined,
             };
+            logPlanner({
+                source: "egress",
+                type: "pushdown",
+                planId: plan.id,
+                data: {
+                    applied: false,
+                    eligible: true,
+                    query,
+                },
+            });
             const pushed = ingress.source.pushdown(query);
             if (pushed) {
                 const output: Array<T> = [];
                 for await (const item of pushed) {output.push(item);}
+                logPlanner({
+                    source: "egress",
+                    type: "final",
+                    planId: plan.id,
+                    data: {
+                        mode: "async",
+                        path: "pushdown",
+                        resultCount: output.length,
+                    },
+                });
                 return output;
             }
+        }
+
+        if (
+            !ingress.source.pushdown
+            || hasResidual
+            || hasSearch
+            || this.state.searchFilters.length > 0
+            || (offset > 0 && limit === null)
+        ) {
+            logPlanner({
+                source: "egress",
+                type: "pushdown",
+                planId: plan.id,
+                data: {
+                    applied: false,
+                    eligible: false,
+                    reason: {
+                        hasResidual,
+                        hasSearch,
+                        hasSearchFilters: this.state.searchFilters.length > 0,
+                        ingressSupportsPushdown: !!ingress.source.pushdown,
+                        offsetWithoutLimit: offset > 0 && limit === null,
+                    },
+                },
+            });
         }
 
         const executor = new AsyncExecutionEngine<T>();
@@ -222,6 +291,19 @@ export class EgressEngine<
                 windowLimit,
             }
         );
+        logPlanner({
+            source: "egress",
+            type: "final",
+            planId: plan.id,
+            data: {
+                mode: "async",
+                path: "local",
+                hasOrders,
+                hasSearch,
+                residualPredicates: plan.residualPredicates?.length ?? 0,
+                resultCount: filtered.length,
+            },
+        });
         return finalizeOrderAndWindow(filtered, this.state.orders, this.state.limitCount, this.state.offsetCount);
     }
 
@@ -269,7 +351,7 @@ export class EgressEngine<
             if (start >= data.length) {return;}
             const end = start + safeSize;
             const last = end < data.length ? end : data.length;
-            for (let i = start; i < last; i++) {buffer.push(data[i]!);}
+            for (let i = start; i < last; i++) { buffer.push(data[i]!); }
         };
 
         fillPage(cursor.data, cursor.page);
@@ -307,7 +389,7 @@ export class EgressEngine<
             if (start >= data.length) {return;}
             const end = start + safeSize;
             const last = end < data.length ? end : data.length;
-            for (let i = start; i < last; i++) {buffer.push(data[i]!);}
+            for (let i = start; i < last; i++) { buffer.push(data[i]!); }
         };
 
         fillPage(cursor.data, cursor.page);
@@ -340,8 +422,8 @@ export class EgressEngine<
                 const key = convert(value);
                 if (key === null || key === undefined) {return;}
                 const bucket = result.get(key);
-                if (bucket) {bucket.push(item);}
-                else {result.set(key, [item]);}
+                if (bucket) { bucket.push(item); }
+                else { result.set(key, [item]); }
             });
         }
         return result as Map<GroupKey<T, P>, Array<T>>;
@@ -371,8 +453,8 @@ export class EgressEngine<
                 const key = convert(value);
                 if (key === null || key === undefined) {return;}
                 const bucket = result.get(key);
-                if (bucket) {bucket.push(item);}
-                else {result.set(key, [item]);}
+                if (bucket) { bucket.push(item); }
+                else { result.set(key, [item]); }
             });
         }
         return result as Map<GroupKey<T, P>, Array<T>>;
@@ -453,46 +535,44 @@ function finalizeOrderAndWindow<T extends Record<string, unknown>>(
     }
 
     const orderCount = effectiveOrders.length;
+    const resolveOrders = new Array<(obj: ResolveObject) => SortKey | null>(orderCount);
+    for (let i = 0; i < orderCount; i++) {
+        const order = effectiveOrders[i]!;
+        resolveOrders[i] = (obj: ResolveObject) => resolveOrderValueWithSegments(obj, order.segments, order.resolve);
+    }
     const compare = createComparator<T>(effectiveOrders);
     const entries: Array<Orderable<T>> = [];
     const pushEntry = (item: T, index: number) => {
         if (orderCount === 1) {
-            const order0 = effectiveOrders[0]!;
             entries.push({
                 index,
                 item,
-                k0: resolveOrderValueWithSegments(item as ResolveObject, order0.segments, order0.resolve),
+                k0: resolveOrders[0]!(item as ResolveObject),
             } as Orderable1<T>);
             return;
         }
         if (orderCount === 2) {
-            const order0 = effectiveOrders[0]!;
-            const order1 = effectiveOrders[1]!;
             entries.push({
                 index,
                 item,
-                k0: resolveOrderValueWithSegments(item as ResolveObject, order0.segments, order0.resolve),
-                k1: resolveOrderValueWithSegments(item as ResolveObject, order1.segments, order1.resolve),
+                k0: resolveOrders[0]!(item as ResolveObject),
+                k1: resolveOrders[1]!(item as ResolveObject),
             } as Orderable2<T>);
             return;
         }
         if (orderCount === 3) {
-            const order0 = effectiveOrders[0]!;
-            const order1 = effectiveOrders[1]!;
-            const order2 = effectiveOrders[2]!;
             entries.push({
                 index,
                 item,
-                k0: resolveOrderValueWithSegments(item as ResolveObject, order0.segments, order0.resolve),
-                k1: resolveOrderValueWithSegments(item as ResolveObject, order1.segments, order1.resolve),
-                k2: resolveOrderValueWithSegments(item as ResolveObject, order2.segments, order2.resolve),
+                k0: resolveOrders[0]!(item as ResolveObject),
+                k1: resolveOrders[1]!(item as ResolveObject),
+                k2: resolveOrders[2]!(item as ResolveObject),
             } as Orderable3<T>);
             return;
         }
         const keys = new Array<SortKey | null>(orderCount);
         for (let j = 0; j < orderCount; j++) {
-            const order = effectiveOrders[j]!;
-            keys[j] = resolveOrderValueWithSegments(item as ResolveObject, order.segments, order.resolve);
+            keys[j] = resolveOrders[j]!(item as ResolveObject);
         }
         entries.push({ index, item, keys } as OrderableN<T>);
     };
@@ -526,7 +606,7 @@ function finalizeOrderAndWindow<T extends Record<string, unknown>>(
                 if (left >= length) {break;}
                 const right = left + 1;
                 let nextIdx = left;
-                if (right < length && compare(heap[right]!, heap[left]!) > 0) {nextIdx = right;}
+                if (right < length && compare(heap[right]!, heap[left]!) > 0) { nextIdx = right; }
                 if (compare(heap[nextIdx]!, heap[idx]!) <= 0) {break;}
                 const temp = heap[idx]!;
                 heap[idx] = heap[nextIdx]!;
@@ -539,48 +619,41 @@ function finalizeOrderAndWindow<T extends Record<string, unknown>>(
             const item = filtered[i]!;
             const index = i;
             if (orderCount === 1) {
-                const order0 = effectiveOrders[0]!;
                 insertCandidate({
                     index,
                     item,
-                    k0: resolveOrderValueWithSegments(item as ResolveObject, order0.segments, order0.resolve),
+                    k0: resolveOrders[0]!(item as ResolveObject),
                 } as Orderable1<T>);
                 continue;
             }
             if (orderCount === 2) {
-                const order0 = effectiveOrders[0]!;
-                const order1 = effectiveOrders[1]!;
                 insertCandidate({
                     index,
                     item,
-                    k0: resolveOrderValueWithSegments(item as ResolveObject, order0.segments, order0.resolve),
-                    k1: resolveOrderValueWithSegments(item as ResolveObject, order1.segments, order1.resolve),
+                    k0: resolveOrders[0]!(item as ResolveObject),
+                    k1: resolveOrders[1]!(item as ResolveObject),
                 } as Orderable2<T>);
                 continue;
             }
             if (orderCount === 3) {
-                const order0 = effectiveOrders[0]!;
-                const order1 = effectiveOrders[1]!;
-                const order2 = effectiveOrders[2]!;
                 insertCandidate({
                     index,
                     item,
-                    k0: resolveOrderValueWithSegments(item as ResolveObject, order0.segments, order0.resolve),
-                    k1: resolveOrderValueWithSegments(item as ResolveObject, order1.segments, order1.resolve),
-                    k2: resolveOrderValueWithSegments(item as ResolveObject, order2.segments, order2.resolve),
+                    k0: resolveOrders[0]!(item as ResolveObject),
+                    k1: resolveOrders[1]!(item as ResolveObject),
+                    k2: resolveOrders[2]!(item as ResolveObject),
                 } as Orderable3<T>);
                 continue;
             }
             const keys = new Array<SortKey | null>(orderCount);
             for (let j = 0; j < orderCount; j++) {
-                const order = effectiveOrders[j]!;
-                keys[j] = resolveOrderValueWithSegments(item as ResolveObject, order.segments, order.resolve);
+                keys[j] = resolveOrders[j]!(item as ResolveObject);
             }
             insertCandidate({ index, item, keys } as OrderableN<T>);
         }
 
         heap.sort(compare);
-        for (let i = 0; i < heap.length; i++) {entries.push(heap[i]!);}
+        for (let i = 0; i < heap.length; i++) { entries.push(heap[i]!); }
     } else {
         for (let i = 0; i < filtered.length; i++) {
             const item = filtered[i]!;
@@ -592,7 +665,7 @@ function finalizeOrderAndWindow<T extends Record<string, unknown>>(
     const end = effectiveLimit === null ? entries.length : start + effectiveLimit;
     const result: Array<T> = [];
     const last = end < entries.length ? end : entries.length;
-    for (let i = start; i < last; i++) {result.push(entries[i]!.item);}
+    for (let i = start; i < last; i++) { result.push(entries[i]!.item); }
     return result;
 }
 

@@ -9,7 +9,11 @@ export class ExecutionEngine<T extends Record<string, unknown>> {
         const data = ingress.data;
         const predicates = plan.predicates;
         const predicateFn = plan.predicateFn;
+        const residualPredicateFn = plan.residualPredicateFn;
         const hasSearch = plan.searchFilters.length > 0;
+        if (plan.alwaysFalse) {
+            return [];
+        }
         if (predicates.length === 0 && !hasSearch) {
             return [...data];
         }
@@ -27,6 +31,15 @@ export class ExecutionEngine<T extends Record<string, unknown>> {
             return result.items;
         }
         const result: Array<T> = [];
+        if (residualPredicateFn && residualPredicateFn !== predicateFn) {
+            for (let i = 0; i < data.length; i++) {
+                const item = data[i]!;
+                if (!predicateFn(item)) {continue;}
+                if (!residualPredicateFn(item)) {continue;}
+                result.push(item);
+            }
+            return result;
+        }
         for (let i = 0; i < data.length; i++) {
             const item = data[i]!;
             if (!predicateFn(item)) {continue;}

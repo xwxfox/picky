@@ -9,6 +9,16 @@ export type PathAccessors = {
     exists: (obj: ResolveObject) => boolean;
 };
 
+const accessorsBySegments = new WeakMap<Array<string>, PathAccessors>();
+
+function getAccessorsForSegments(segments: Array<string>): PathAccessors {
+    const cached = accessorsBySegments.get(segments);
+    if (cached) {return cached;}
+    const created = createPathAccessors(segments);
+    accessorsBySegments.set(segments, created);
+    return created;
+}
+
 export function createPathAccessors(segments: Array<string>): PathAccessors {
     const length = segments.length;
     if (length === 1) {
@@ -614,14 +624,14 @@ export function someResolvedWithSegments(
     segments: Array<string>,
     predicate: ResolvePredicate
 ): boolean {
-    return createPathAccessors(segments).some(obj, predicate);
+    return getAccessorsForSegments(segments).some(obj, predicate);
 }
 
 export function resolveFirstWithSegments(
     obj: ResolveObject,
     segments: Array<string>
 ): ResolveValue | undefined {
-    return createPathAccessors(segments).first(obj);
+    return getAccessorsForSegments(segments).first(obj);
 }
 
 export function forEachResolvedWithSegments(
@@ -629,7 +639,7 @@ export function forEachResolvedWithSegments(
     segments: Array<string>,
     visit: (value: ResolveValue) => void
 ): void {
-    createPathAccessors(segments).forEach(obj, visit);
+    getAccessorsForSegments(segments).forEach(obj, visit);
 }
 
 export function everyResolvedWithSegments(
@@ -637,11 +647,11 @@ export function everyResolvedWithSegments(
     segments: Array<string>,
     predicate: ResolvePredicate
 ): boolean {
-    return createPathAccessors(segments).every(obj, predicate);
+    return getAccessorsForSegments(segments).every(obj, predicate);
 }
 
 export function pathExistsWithSegments(obj: ResolveObject, segments: Array<string>): boolean {
-    return createPathAccessors(segments).exists(obj);
+    return getAccessorsForSegments(segments).exists(obj);
 }
 
 export function resolveOrderValueWithSegments(

@@ -56,7 +56,7 @@ export class IngressEngine<T extends Record<string, unknown>> {
         public readonly capabilities: IngressCapabilities = normalizeIngressCapabilities(),
         public readonly hints?: IngressHints<T>,
         public readonly schema?: Schema<T>
-    ) {}
+    ) { }
 
     static from<T extends Record<string, unknown>>(
         data: ReadonlyArray<T>,
@@ -115,9 +115,9 @@ export class IngressEngine<T extends Record<string, unknown>> {
         maxPathCache?: number;
         sharedCache?: boolean;
     }): void {
-        if (typeof options.sharedCache === "boolean") {setUseSharedCache(options.sharedCache);}
-        if (typeof options.maxDateCache === "number") {defaultCacheOptions.maxDateCache = options.maxDateCache;}
-        if (typeof options.maxPathCache === "number") {defaultCacheOptions.maxPathCache = options.maxPathCache;}
+        if (typeof options.sharedCache === "boolean") { setUseSharedCache(options.sharedCache); }
+        if (typeof options.maxDateCache === "number") { defaultCacheOptions.maxDateCache = options.maxDateCache; }
+        if (typeof options.maxPathCache === "number") { defaultCacheOptions.maxPathCache = options.maxPathCache; }
         if (getUseSharedCache()) {
             setSharedCacheState(createCacheState(defaultCacheOptions));
         }
@@ -164,7 +164,7 @@ export class AsyncIngressEngine<T extends Record<string, unknown>> {
         public readonly capabilities: IngressCapabilities = normalizeIngressCapabilities(),
         public readonly hints?: IngressHints<T>,
         public readonly schema?: Schema<T>
-    ) {}
+    ) { }
 
     async materialize(): Promise<ReadonlyArray<T>> {
         if (this.source.materialize) {

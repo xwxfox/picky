@@ -29,7 +29,7 @@ export function fileSource<T extends Record<string, unknown>>(
         const output: Array<T> = [];
         for (let i = 0; i < parsed.length; i++) {
             const item = parsed[i];
-            if (!isRecord(item)) {continue;}
+            if (!isRecord(item)) { continue; }
             output.push(item as T);
         }
         return output as ReadonlyArray<T>;
@@ -47,15 +47,13 @@ export function fileSource<T extends Record<string, unknown>>(
 async function* streamJsonArray<T extends Record<string, unknown>>(
     path: string
 ): AsyncIterable<T> {
-    const file = Bun.file(path);
-    const text = await file.text();
-    const parsed = JSON.parse(text);
+    const parsed = await Bun.file(path).json();
     if (!Array.isArray(parsed)) {
         throw new Error("File JSON root must be an array.");
     }
     for (let i = 0; i < parsed.length; i++) {
         const item = parsed[i];
-        if (!isRecord(item)) {continue;}
+        if (!isRecord(item)) { continue; }
         yield item as T;
     }
 }
@@ -71,7 +69,7 @@ async function* streamNdjson<T extends Record<string, unknown>>(
     const pending = (async () => {
         while (true) {
             const result = await reader.read();
-            if (result.done) {break;}
+            if (result.done) { break; }
             const chunk = result.value;
             if (!(chunk instanceof Uint8Array)) {
                 const bytes = new Uint8Array(chunk as ArrayBuffer);
@@ -91,8 +89,8 @@ async function* streamNdjson<T extends Record<string, unknown>>(
 }
 
 function pushJsonLine<T extends Record<string, unknown>>(queue: AsyncQueue<T>, line: string): void {
-    if (line.length === 0) {return;}
+    if (line.length === 0) { return; }
     const parsed = JSON.parse(line);
-    if (!isRecord(parsed)) {return;}
+    if (!isRecord(parsed)) { return; }
     queue.push(parsed as T);
 }
