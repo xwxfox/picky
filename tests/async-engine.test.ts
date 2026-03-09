@@ -43,13 +43,14 @@ const makeAsyncIngress = <T extends Record<string, unknown>>(
         capabilities: options?.capabilities,
         hints: options?.hints,
         mode: "async",
-        stream: async function* () {
+        stream: async function* (_options) {
             stats.streamCalls++;
             for (let i = 0; i < items.length; i++) {
                 stats.streamedItems++;
                 yield items[i]!;
             }
         },
+        materialize: async () => items,
     };
     if (options?.withMaterialize !== false) {
         source.materialize = async () => {
@@ -162,7 +163,7 @@ describe("Async ingress helpers", () => {
     it("materialize iterates stream when source lacks materialize", async () => {
         const source: AsyncIngressSource<AsyncItem> = {
             mode: "async",
-            stream: async function* () {
+            stream: async function* (_options) {
                 for (let i = 0; i < baseItems.length; i++) { yield baseItems[i]!; }
             },
         };
@@ -177,7 +178,7 @@ describe("Async ingress helpers", () => {
         const source: AsyncIngressSource<AsyncItem> = {
             close: async () => { closed += 1; },
             mode: "async",
-            stream: async function* () {
+            stream: async function* (_options) {
                 for (let i = 0; i < baseItems.length; i++) { yield baseItems[i]!; }
             },
         };

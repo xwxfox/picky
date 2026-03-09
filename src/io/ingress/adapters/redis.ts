@@ -24,7 +24,7 @@ const defaultParse = <T extends Record<string, unknown>>(value: string): T | nul
 export function redisSource<T extends Record<string, unknown>>(
     options: RedisIngressOptions<T>
 ): AsyncIngressSource<T> {
-    const stream = () => streamRedis<T>(options);
+    const stream = (_options?: import("@/io/ingress/prefilter").PrefilterStreamOptions) => streamRedis<T>(options);
     const materialize = async () => {
         const items: Array<T> = [];
         for await (const item of stream()) {items.push(item);}

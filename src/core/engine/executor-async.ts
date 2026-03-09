@@ -8,6 +8,7 @@ import { emitMarker, emitMetrics, endTiming, startTiming } from "@/core/engine/t
 import type { TimingToken } from "@/core/engine/telemetry";
 import { createPredicateExecutionMetrics, shouldCollectDeepMetrics } from "@/core/engine/metrics";
 import { nowMs } from "@/core/engine/telemetry-time";
+import { createPrefilterContext, emitPrefilterMetrics } from "@/core/engine/prefilter-plan";
 
 export class AsyncExecutionEngine<T extends Record<string, unknown>> {
     async execute(
@@ -43,12 +44,17 @@ export class AsyncExecutionEngine<T extends Record<string, unknown>> {
         const windowLimit = options?.windowLimit;
 
         if (!shouldStream) {
+            const prefilterContext = createPrefilterContext(plan, execTiming);
             const loadTiming = startTiming("execution", "execution.load.materialize", plan.id, execTiming);
-            const data = await ingress.materialize();
+            if (prefilterContext) {
+                prefilterContext.streamOptions.timingParent = loadTiming?.spanId ?? null;
+            }
+            const data = await ingress.materialize(prefilterContext?.streamOptions);
             endTiming(loadTiming, { skipData: true });
             if (predicates.length === 0 && !hasSearch) {
                 emitMarker("execution", "execution.execute.end", plan.id, execTiming);
                 endTiming(execTiming, { skipData: true });
+                emitPrefilterMetrics(plan.id, prefilterContext, { phase: "executeAsync.materialize" });
                 return [...data];
             }
             if (hasSearch) {
@@ -68,6 +74,7 @@ export class AsyncExecutionEngine<T extends Record<string, unknown>> {
                 endTiming(searchTiming, { skipData: true });
                 emitMarker("execution", "execution.execute.end", plan.id, execTiming);
                 endTiming(execTiming, { skipData: true });
+                emitPrefilterMetrics(plan.id, prefilterContext, { phase: "executeAsync.materialize.search" });
                 return result.items;
             }
             const output: Array<T> = [];
@@ -104,6 +111,7 @@ export class AsyncExecutionEngine<T extends Record<string, unknown>> {
                         },
                     });
                 }
+                emitPrefilterMetrics(plan.id, prefilterContext, { phase: "executeAsync.materialize" });
                 emitMarker("execution", "execution.execute.end", plan.id, execTiming);
                 endTiming(execTiming, { skipData: true });
                 return output;
@@ -138,6 +146,7 @@ export class AsyncExecutionEngine<T extends Record<string, unknown>> {
                     },
                 });
             }
+            emitPrefilterMetrics(plan.id, prefilterContext, { phase: "executeAsync.materialize" });
             emitMarker("execution", "execution.execute.end", plan.id, execTiming);
             endTiming(execTiming, { skipData: true });
             return output;
@@ -146,8 +155,8 @@ export class AsyncExecutionEngine<T extends Record<string, unknown>> {
         if (hasSearch) {
             if (shouldStream) {
                 const searchTiming = startTiming("execution", "execution.searchPipelineAsync", plan.id, execTiming);
-                const result = await executeSearchPipelineAsync<T, SearchCapabilityState>(
-                    ingress.stream(),
+                const prefilterContext = createPrefilterContext(plan, execTiming);                const result = await executeSearchPipelineAsync<T, SearchCapabilityState>(
+                    ingress.stream(prefilterContext?.streamOptions),
                     predicates,
                     predicateFn,
                     plan.cache,
@@ -160,6 +169,7 @@ export class AsyncExecutionEngine<T extends Record<string, unknown>> {
                     execTiming
                 );
                 endTiming(searchTiming, { skipData: true });
+                emitPrefilterMetrics(plan.id, prefilterContext, { phase: "executeAsync.search" });
                 emitMarker("execution", "execution.execute.end", plan.id, execTiming);
                 endTiming(execTiming, { skipData: true });
                 return result.items;
@@ -190,7 +200,8 @@ export class AsyncExecutionEngine<T extends Record<string, unknown>> {
             emitMarker("execution", "execution.load.stream", plan.id, execTiming);
             const limit = windowLimit ?? 0;
             const useMetrics = predicateMetrics !== null && plan.predicateSpecs && plan.predicateSpecs.length > 0;
-            for await (const item of ingress.stream()) {
+            const prefilterContext = createPrefilterContext(plan, execTiming);
+            for await (const item of ingress.stream(prefilterContext?.streamOptions)) {
                 let ok = true;
                 if (useMetrics) {
                     for (let p = 0; p < plan.predicateSpecs!.length; p++) {
@@ -224,6 +235,7 @@ export class AsyncExecutionEngine<T extends Record<string, unknown>> {
                     },
                 });
             }
+            emitPrefilterMetrics(plan.id, prefilterContext, { phase: "executeAsync.stream" });
             emitMarker("execution", "execution.execute.end", plan.id, execTiming);
             endTiming(execTiming, { skipData: true });
             return output;

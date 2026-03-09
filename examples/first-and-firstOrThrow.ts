@@ -1,4 +1,4 @@
-import { Engine, IngressEngine } from "../src";
+import { Engine, IngressEngine } from "../";
 
 type LogEntry = {
     message: string;

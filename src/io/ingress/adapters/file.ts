@@ -1,6 +1,9 @@
 import type { Schema } from "@/io/schema";
 import type { IngressCapabilities, IngressHints, AsyncIngressSource } from "@/io/ingress/types";
-import { AsyncQueue, LineDecoder, isRecord } from "@/io/ingress/utils";
+import type { PrefilterStreamOptions } from "@/io/ingress/prefilter";
+import { batchPrefilterNdjson, applyJsonArrayPrefilter } from "@/io/ingress/prefilter-runtime";
+import { isRecord } from "@/io/ingress/utils";
+import { startTiming, endTiming } from "@/core/engine/telemetry";
 
 export type JsonFileFormat = "json" | "ndjson";
 
@@ -8,6 +11,7 @@ export type FileIngressOptions<T extends Record<string, unknown>> = {
     capabilities?: Partial<IngressCapabilities>;
     format?: JsonFileFormat;
     hints?: IngressHints<T>;
+    prefilterMode?: "auto" | "off";
     schema?: Schema<T>;
 };
 
@@ -17,23 +21,11 @@ export function fileSource<T extends Record<string, unknown>>(
 ): AsyncIngressSource<T> {
     const format = options?.format ?? "json";
     const stream = format === "ndjson"
-        ? () => streamNdjson<T>(path)
-        : () => streamJsonArray<T>(path);
-    const materialize = async () => {
-        const file = Bun.file(path);
-        const text = await file.text();
-        const parsed = JSON.parse(text);
-        if (!Array.isArray(parsed)) {
-            throw new Error("File JSON root must be an array.");
-        }
-        const output: Array<T> = [];
-        for (let i = 0; i < parsed.length; i++) {
-            const item = parsed[i];
-            if (!isRecord(item)) { continue; }
-            output.push(item as T);
-        }
-        return output as ReadonlyArray<T>;
-    };
+        ? (streamOptions?: PrefilterStreamOptions) => streamNdjson<T>(path, mergePrefilterOptions(streamOptions, options?.prefilterMode))
+        : (streamOptions?: PrefilterStreamOptions) => streamJsonArray<T>(path, mergePrefilterOptions(streamOptions, options?.prefilterMode));
+    const materialize = format === "ndjson"
+        ? (streamOptions?: PrefilterStreamOptions) => materializeNdjson<T>(path, mergePrefilterOptions(streamOptions, options?.prefilterMode))
+        : (streamOptions?: PrefilterStreamOptions) => materializeJsonArray<T>(path, mergePrefilterOptions(streamOptions, options?.prefilterMode));
     return {
         capabilities: options?.capabilities,
         hints: options?.hints,
@@ -45,9 +37,28 @@ export function fileSource<T extends Record<string, unknown>>(
 }
 
 async function* streamJsonArray<T extends Record<string, unknown>>(
-    path: string
+    path: string,
+    options?: PrefilterStreamOptions
 ): AsyncIterable<T> {
-    const parsed = await Bun.file(path).json();
+    const planId = options?.planId ?? "";
+    const tp = options?.timingParent ?? null;
+
+    const readTiming = startTiming("ingress", "ingress.file.read", planId, tp);
+    const bytes = new Uint8Array(await Bun.file(path).arrayBuffer());
+    endTiming(readTiming, { skipData: true });
+
+    const matched = applyJsonArrayPrefilter(bytes, options);
+
+    if (matched !== null) {
+        for (let i = 0; i < matched.length; i++) {
+            yield matched[i]! as T;
+        }
+        return;
+    }
+    // Fallback: no prefilter or error - full parse
+    const parseTiming = startTiming("ingress", "ingress.json.parse", planId, tp);
+    const parsed = JSON.parse(bytesToString(bytes));
+    endTiming(parseTiming, { skipData: true });
     if (!Array.isArray(parsed)) {
         throw new Error("File JSON root must be an array.");
     }
@@ -58,39 +69,116 @@ async function* streamJsonArray<T extends Record<string, unknown>>(
     }
 }
 
-async function* streamNdjson<T extends Record<string, unknown>>(
-    path: string
-): AsyncIterable<T> {
-    const file = Bun.file(path);
-    const stream = file.stream();
-    const reader = stream.getReader();
-    const decoder = new LineDecoder();
-    const queue = new AsyncQueue<T>();
-    const pending = (async () => {
-        while (true) {
-            const result = await reader.read();
-            if (result.done) { break; }
-            const chunk = result.value;
-            if (!(chunk instanceof Uint8Array)) {
-                const bytes = new Uint8Array(chunk as ArrayBuffer);
-                decoder.push(bytes, line => pushJsonLine(queue, line));
-                continue;
-            }
-            decoder.push(chunk, line => pushJsonLine(queue, line));
-        }
-        decoder.flush(line => pushJsonLine(queue, line));
-        queue.close();
-    })();
+async function materializeJsonArray<T extends Record<string, unknown>>(
+    path: string,
+    options?: PrefilterStreamOptions
+): Promise<ReadonlyArray<T>> {
+    const planId = options?.planId ?? "";
+    const tp = options?.timingParent ?? null;
 
-    for await (const item of queue) {
-        yield item;
+    const readTiming = startTiming("ingress", "ingress.file.read", planId, tp);
+    const bytes = new Uint8Array(await Bun.file(path).arrayBuffer());
+    endTiming(readTiming, { skipData: true });
+
+    const matched = applyJsonArrayPrefilter(bytes, options);
+
+    if (matched !== null) {
+        return matched as Array<T>;
     }
-    await pending;
+    // Fallback: bulk parse entire array
+    const parseTiming = startTiming("ingress", "ingress.json.parse", planId, tp);
+    const parsed = JSON.parse(bytesToString(bytes));
+    endTiming(parseTiming, { skipData: true });
+    if (!Array.isArray(parsed)) {
+        throw new Error("File JSON root must be an array.");
+    }
+    return parsed as Array<T>;
 }
 
-function pushJsonLine<T extends Record<string, unknown>>(queue: AsyncQueue<T>, line: string): void {
-    if (line.length === 0) { return; }
-    const parsed = JSON.parse(line);
-    if (!isRecord(parsed)) { return; }
-    queue.push(parsed as T);
+async function materializeNdjson<T extends Record<string, unknown>>(
+    path: string,
+    options?: PrefilterStreamOptions
+): Promise<ReadonlyArray<T>> {
+    const planId = options?.planId ?? "";
+    const tp = options?.timingParent ?? null;
+
+    const readTiming = startTiming("ingress", "ingress.file.read", planId, tp);
+    const bytes = new Uint8Array(await Bun.file(path).arrayBuffer());
+    endTiming(readTiming, { skipData: true });
+
+    const matched = batchPrefilterNdjson(bytes, options);
+
+    if (matched !== null) {
+        const parseTiming = startTiming("ingress", "ingress.json.parse", planId, tp);
+        const output: Array<T> = new Array(matched.length);
+        let count = 0;
+        for (let i = 0; i < matched.length; i++) {
+            const parsed = JSON.parse(matched[i]!);
+            if (isRecord(parsed)) { output[count++] = parsed as T; }
+        }
+        output.length = count;
+        endTiming(parseTiming, { skipData: true });
+        return output;
+    }
+    // Fallback: decode and split by lines
+    const parseTiming = startTiming("ingress", "ingress.json.parse", planId, tp);
+    const text = bytesToString(bytes);
+    const lines = text.split("\n");
+    const output: Array<T> = [];
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i]!.trim();
+        if (line.length === 0) { continue; }
+        const parsed = JSON.parse(line);
+        if (isRecord(parsed)) { output.push(parsed as T); }
+    }
+    endTiming(parseTiming, { skipData: true });
+    return output;
+}
+
+async function* streamNdjson<T extends Record<string, unknown>>(
+    path: string,
+    options?: PrefilterStreamOptions
+): AsyncIterable<T> {
+    const planId = options?.planId ?? "";
+    const tp = options?.timingParent ?? null;
+
+    const readTiming = startTiming("ingress", "ingress.file.read", planId, tp);
+    const bytes = new Uint8Array(await Bun.file(path).arrayBuffer());
+    endTiming(readTiming, { skipData: true });
+
+    // Try batch prefilter path
+    const matched = batchPrefilterNdjson(bytes, options);
+
+    if (matched !== null) {
+        // Batch prefilter succeeded - parse only matched items
+        for (let i = 0; i < matched.length; i++) {
+            const parsed = JSON.parse(matched[i]!);
+            if (!isRecord(parsed)) { continue; }
+            yield parsed as T;
+        }
+        return;
+    }
+
+    // Fallback: no prefilter or error - decode and split by lines
+    const text = bytesToString(bytes);
+    const lines = text.split("\n");
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i]!.trim();
+        if (line.length === 0) { continue; }
+        const parsed = JSON.parse(line);
+        if (!isRecord(parsed)) { continue; }
+        yield parsed as T;
+    }
+}
+
+function bytesToString(bytes: Uint8Array): string {
+    return new TextDecoder().decode(bytes);
+}
+
+function mergePrefilterOptions(
+    options: PrefilterStreamOptions | undefined,
+    mode: "auto" | "off" | undefined
+): PrefilterStreamOptions | undefined {
+    if (!mode || mode === "auto") { return options; }
+    return { ...options, prefilterMode: mode };
 }

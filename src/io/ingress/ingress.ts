@@ -169,19 +169,19 @@ export class AsyncIngressEngine<T extends Record<string, unknown>> {
         public readonly schema?: Schema<T>
     ) { }
 
-    async materialize(): Promise<ReadonlyArray<T>> {
+    async materialize(options?: import("@/io/ingress/prefilter").PrefilterStreamOptions): Promise<ReadonlyArray<T>> {
         if (this.source.materialize) {
-            return this.source.materialize();
+            return this.source.materialize(options);
         }
         const items: Array<T> = [];
-        for await (const item of this.source.stream()) {
+        for await (const item of this.source.stream(options ?? { prefilterMode: "off" })) {
             items.push(item);
         }
         return items;
     }
 
-    stream(): AsyncIterable<T> {
-        return this.source.stream();
+    stream(options?: import("@/io/ingress/prefilter").PrefilterStreamOptions): AsyncIterable<T> {
+        return this.source.stream(options);
     }
 
     get length(): number {

@@ -51,6 +51,159 @@ describe("Ingress adapters", () => {
         }
     });
 
+    it("fileSource prefilters JSON array", async () => {
+        const jsonPath = `./tests/temp-json-${Date.now()}.json`;
+        const items = [
+            { id: 1, name: "alpha", score: 1, active: true },
+            { id: 2, name: "beta", score: 2, active: false },
+            { id: 3, name: "alpha", score: 3, active: true },
+        ];
+        await Bun.write(jsonPath, JSON.stringify(items));
+
+        try {
+            const ingress = IngressEngine.fromSource(fileSource<typeof items[number]>(jsonPath, { format: "json" }));
+            const result = await Engine.from(ingress)
+                .equals("name", "alpha")
+                .greaterThan("score", 1)
+                .out()
+                .result();
+            expect(result.map(item => item.id)).toEqual([3]);
+        } finally {
+            await Bun.file(jsonPath).delete();
+        }
+    });
+
+    it("fileSource prefilters NDJSON", async () => {
+        const ndjsonPath = `./tests/temp-ndjson-${Date.now()}.ndjson`;
+        const items = [
+            { id: 1, name: "alpha", score: 1, active: true },
+            { id: 2, name: "beta", score: 2, active: false },
+            { id: 3, name: "alpha", score: 3, active: true },
+        ];
+        await Bun.write(ndjsonPath, items.map(item => JSON.stringify(item)).join("\n"));
+
+        try {
+            const ingress = IngressEngine.fromSource(fileSource<typeof items[number]>(ndjsonPath, { format: "ndjson" }));
+            const result = await Engine.from(ingress)
+                .equals("name", "alpha")
+                .greaterThan("score", 1)
+                .out()
+                .result();
+            expect(result.map(item => item.id)).toEqual([3]);
+        } finally {
+            await Bun.file(ndjsonPath).delete();
+        }
+    });
+
+    it("prefilter never drops values for complex predicates", async () => {
+        const jsonPath = `./tests/temp-json-${Date.now()}.json`;
+        const items = [
+            { id: 1, name: "alpha", score: 1, active: true },
+            { id: 2, name: "beta", score: 2, active: false },
+            { id: 3, name: "alpha", score: 3, active: true },
+            { id: 4, name: "alpha", score: 4, active: false },
+        ];
+        await Bun.write(jsonPath, JSON.stringify(items));
+
+        try {
+            const ingress = IngressEngine.fromSource(fileSource<typeof items[number]>(jsonPath, { format: "json" }));
+            const result = await Engine.from(ingress)
+                .equals("name", "alpha")
+                .custom(item => item.active === false)
+                .out()
+                .result();
+            expect(result.map(item => item.id)).toEqual([4]);
+        } finally {
+            await Bun.file(jsonPath).delete();
+        }
+    });
+
+    it("prefilter handles escaped strings", async () => {
+        const jsonPath = `./tests/temp-json-${Date.now()}.json`;
+        const items = [
+            { id: 1, name: "a\"b", score: 1, active: true },
+            { id: 2, name: "plain", score: 2, active: false },
+        ];
+        await Bun.write(jsonPath, JSON.stringify(items));
+
+        try {
+            const ingress = IngressEngine.fromSource(fileSource<typeof items[number]>(jsonPath, { format: "json" }));
+            const result = await Engine.from(ingress)
+                .equals("name", "a\"b")
+                .out()
+                .result();
+            expect(result.map(item => item.id)).toEqual([1]);
+        } finally {
+            await Bun.file(jsonPath).delete();
+        }
+    });
+
+    it("prefilter handles boolean eq", async () => {
+        const jsonPath = `./tests/temp-json-${Date.now()}.json`;
+        const items = [
+            { id: 1, name: "alpha", score: 1, active: true },
+            { id: 2, name: "beta", score: 2, active: false },
+        ];
+        await Bun.write(jsonPath, JSON.stringify(items));
+
+        try {
+            const ingress = IngressEngine.fromSource(fileSource<typeof items[number]>(jsonPath, { format: "json" }));
+            const result = await Engine.from(ingress)
+                .equals("active", true)
+                .out()
+                .result();
+            expect(result.map(item => item.id)).toEqual([1]);
+        } finally {
+            await Bun.file(jsonPath).delete();
+        }
+    });
+
+    it("prefilter respects notEquals for missing field", async () => {
+        const jsonPath = `./tests/temp-json-${Date.now()}.json`;
+        const items = [
+            { id: 1, name: "alpha", score: 1 } as { id: number; name: string; score: number; active?: boolean },
+            { id: 2, name: "beta", score: 2 } as { id: number; name: string; score: number; active?: boolean },
+        ];
+        await Bun.write(jsonPath, JSON.stringify(items));
+
+        try {
+            const ingress = IngressEngine.fromSource(fileSource<typeof items[number]>(jsonPath, { format: "json" }));
+            const result = await Engine.from(ingress)
+                .notEquals("active", true)
+                .out()
+                .result();
+            expect(result.map(item => item.id)).toEqual([1, 2]);
+        } finally {
+            await Bun.file(jsonPath).delete();
+        }
+    });
+
+    it("prefilter supports null checks", async () => {
+        const jsonPath = `./tests/temp-json-${Date.now()}.json`;
+        const items = [
+            { id: 1, name: null as string | null, score: 1 },
+            { id: 2, name: "beta", score: 2 },
+        ];
+        await Bun.write(jsonPath, JSON.stringify(items));
+
+        try {
+            const ingress = IngressEngine.fromSource(fileSource<typeof items[number]>(jsonPath, { format: "json" }));
+            const isNullResult = await Engine.from(ingress)
+                .isNull("name")
+                .out()
+                .result();
+            expect(isNullResult.map(item => item.id)).toEqual([1]);
+
+            const notNullResult = await Engine.from(ingress)
+                .valueNotNull("name")
+                .out()
+                .result();
+            expect(notNullResult.map(item => item.id)).toEqual([2]);
+        } finally {
+            await Bun.file(jsonPath).delete();
+        }
+    });
+
     it("httpSource paginates over offset and cursor", async () => {
         const calls: Array<{ body?: string; method?: string; url: string }> = [];
         const originalFetch = globalThis.fetch;

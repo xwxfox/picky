@@ -1465,9 +1465,10 @@ describe("Ingress + schema helpers", () => {
         const source = IngressEngine.fromSource({
             hints: { estimatedCount: data.length },
             mode: "async",
-            stream: async function* () {
+            stream: async function* (_options) {
                 for (let i = 0; i < data.length; i++) {yield data[i]!;}
             },
+            materialize: async () => data,
         });
         if (source.mode !== "async") {throw new Error("Expected async ingress.");}
         expect(source.length).toEqual(data.length);

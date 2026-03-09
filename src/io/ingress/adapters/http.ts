@@ -1,6 +1,8 @@
 import type { Schema } from "@/io/schema";
 import type { IngressCapabilities, IngressHints, AsyncIngressSource } from "@/io/ingress/types";
+import { applyJsonArrayPrefilter } from "@/io/ingress/prefilter-runtime";
 import { AsyncQueue, isRecord } from "@/io/ingress/utils";
+import { startTiming, endTiming } from "@/core/engine/telemetry";
 
 export type ApiPaginationMode = "offset" | "page" | "cursor" | "none";
 
@@ -35,13 +37,14 @@ export type HttpIngressOptions<T extends Record<string, unknown>> = {
     behavior: ApiBehavior<T>;
     capabilities?: Partial<IngressCapabilities>;
     hints?: IngressHints<T>;
+    prefilterMode?: "auto" | "off";
     schema?: Schema<T>;
 };
 
 export function httpSource<T extends Record<string, unknown>>(
     options: HttpIngressOptions<T>
 ): AsyncIngressSource<T> {
-    const stream = () => streamApi<T>(options.behavior);
+    const stream = (streamOptions?: import("@/io/ingress/prefilter").PrefilterStreamOptions) => streamApi<T>(options.behavior, mergePrefilterOptions(streamOptions, options.prefilterMode));
     const materialize = async () => {
         const items: Array<T> = [];
         for await (const item of stream()) {
@@ -60,7 +63,8 @@ export function httpSource<T extends Record<string, unknown>>(
 }
 
 async function* streamApi<T extends Record<string, unknown>>(
-    behavior: ApiBehavior<T>
+    behavior: ApiBehavior<T>,
+    options?: import("@/io/ingress/prefilter").PrefilterStreamOptions
 ): AsyncIterable<T> {
     const queue = new AsyncQueue<T>();
     const pending = (async () => {
@@ -68,15 +72,45 @@ async function* streamApi<T extends Record<string, unknown>>(
         let cursor: string | null = null;
         let page = 1;
         let offset = 0;
+        const planId = options?.planId ?? "";
+        const tp = options?.timingParent ?? null;
         while (true) {
+            const fetchTiming = startTiming("ingress", "ingress.http.fetch", planId, tp);
             const response = await fetch(
                 buildUrl(behavior, pageSize, offset, cursor, page),
                 buildRequestInit(behavior, pageSize, offset, cursor, page)
             );
             if (!response.ok) {
+                endTiming(fetchTiming, { skipData: true });
                 throw new Error(`HTTP ingress failed (${response.status}).`);
             }
-            const payload = await response.json();
+            const rawBody = await response.arrayBuffer();
+            endTiming(fetchTiming, { skipData: true });
+
+            const prefiltered = applyJsonArrayPrefilter(new Uint8Array(rawBody), options);
+            if (!behavior.dataPath && prefiltered && behavior.pagination?.mode !== "cursor") {
+                for (let i = 0; i < prefiltered.length; i++) {
+                    const item = prefiltered[i]!;
+                    if (!isRecord(item)) {continue;}
+                    queue.push(item as T);
+                }
+                const pagination = behavior.pagination?.mode ?? "none";
+                if (pagination === "none") {break;}
+                if (pagination === "page") {
+                    if (prefiltered.length < pageSize) {break;}
+                    page += 1;
+                    continue;
+                }
+                if (pagination === "offset") {
+                    if (prefiltered.length < pageSize) {break;}
+                    offset += pageSize;
+                    continue;
+                }
+                break;
+            }
+            const parseTiming = startTiming("ingress", "ingress.json.parse", planId, tp);
+            const payload = JSON.parse(new TextDecoder().decode(rawBody)) as unknown;
+            endTiming(parseTiming, { skipData: true });
             const items = extractItems<T>(payload, behavior.dataPath);
             for (let i = 0; i < items.length; i++) {queue.push(items[i]!);}
 
@@ -107,6 +141,14 @@ async function* streamApi<T extends Record<string, unknown>>(
         yield item;
     }
     await pending;
+}
+
+function mergePrefilterOptions(
+    options: import("@/io/ingress/prefilter").PrefilterStreamOptions | undefined,
+    mode: "auto" | "off" | undefined
+): import("@/io/ingress/prefilter").PrefilterStreamOptions | undefined {
+    if (!mode || mode === "auto") {return options;}
+    return { ...options, prefilterMode: mode };
 }
 
 function buildUrl<T extends Record<string, unknown>>(

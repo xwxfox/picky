@@ -1,44 +1,64 @@
 {
   "name": "pickie",
-  "module": "src/index.ts",
+  "description": "smol lil filter engine focussing on perf optimizations and nice sugary DX for arrays of structured objects.",
   "version": "0.0.4",
+  "type": "module",
+  "files": [
+    "./src/*.ts",
+    "./src/**/*.ts",
+    "dist"
+  ],
+  "module": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./src/index.ts",
+        "default": "./src/index.ts",
+        "bun": "./src/index.ts"
+      }
+    },
+    "./package.json": "./package.json",
+    "./smol": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      }
+    }
+  },
   "author": "xwxfox",
   "publishConfig": {
     "access": "public"
   },
   "scripts": {
     "test": "bun test --coverage",
+    "build": "bunup",
     "example": "bun examples/example.ts",
     "bench": "./scripts/compare.sh",
     "lint": "oxlint --fix --type-aware",
-    "typecheck": "tsgo --noEmit"
-  },
-  "exports": {
-    ".": "./src/index.ts",
-    "./*": "./src/*"
+    "typecheck": "bunx tsgo --noEmit",
+    "knip": "knip"
   },
   "devDependencies": {
     "@nkzw/eslint-plugin": "^2.0.0",
     "@nkzw/oxlint-config": "^1.0.1",
     "@types/bun": "latest",
+    "@types/node": "^25.3.5",
+    "@typescript/native-preview": "^7.0.0-dev.20260309.1",
+    "bunup": "^0.16.31",
     "eslint-plugin-no-only-tests": "^3.3.0",
     "eslint-plugin-perfectionist": "^5.6.0",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-unused-imports": "^4.4.1",
+    "knip": "^5.86.0",
     "oxlint": "^1.51.0",
     "oxlint-tsgolint": "^0.16.0"
   },
   "peerDependencies": {
-    "typescript": "^5"
+    "typescript": "^5.9.3"
   },
-  "files": [
-    "./src/*.ts",
-    "./src/**/*.ts"
-  ],
   "repository": {
     "url": "https://github.com/xwxfox/pickie",
     "type": "github"
-  },
-  "description": "smol lil filter engine focussing on perf optimizations and nice sugary DX for arrays of structured objects.",
-  "type": "module"
+  }
 }

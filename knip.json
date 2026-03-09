@@ -1,0 +1,31 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "tags": [
+    "-lintignore"
+  ],
+  "oxlint": {
+    "config": "oxlint.config.ts"
+  },
+  "project": [
+    "./src/**/*.ts",
+    "./examples/**/*.ts",
+    "./scripts/**/*.ts",
+    "./tests/**/*.ts"
+  ],
+  "ignoreFiles": [
+    "./examples/**.ts",
+    "./scripts/**"
+  ],
+  "paths": {
+    "@/*": [
+      "./src/*"
+    ]
+  },
+  "ignoreDependencies": [
+    "@nkzw/eslint-plugin",
+    "eslint-plugin-no-only-tests",
+    "eslint-plugin-perfectionist",
+    "eslint-plugin-react-hooks",
+    "eslint-plugin-unused-imports"
+  ]
+}

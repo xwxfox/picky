@@ -22,6 +22,7 @@ import type { Orderable1, Orderable2, Orderable3, OrderableN, Orderable } from "
 import { logPlanner } from "@/core/engine/planner-logger";
 import type { TimingToken } from "@/core/engine/telemetry";
 import { emitMarker, emitMetrics, endTiming, startTiming } from "@/core/engine/telemetry";
+import { createPrefilterContext, emitPrefilterMetrics } from "@/core/engine/prefilter-plan";
 
 export type EgressMode = "sync" | "async";
 
@@ -350,8 +351,9 @@ export class EgressEngine<
         }
 
         if (hasSearch) {
+            const prefilterContext = createPrefilterContext(plan);
             const result = await executeSearchPipelineAsync<T, SearchCapabilityState>(
-                ingress.stream(),
+                ingress.stream(prefilterContext?.streamOptions),
                 plan.predicates,
                 plan.predicateFn,
                 plan.cache,
@@ -362,6 +364,7 @@ export class EgressEngine<
                 offset + 1,
                 plan.id
             );
+            emitPrefilterMetrics(plan.id, prefilterContext, { phase: "executeFirstAsync.search" });
             return result.items[offset];
         }
 
@@ -370,20 +373,26 @@ export class EgressEngine<
         let seen = 0;
 
         if (residualPredicateFn && residualPredicateFn !== predicateFn) {
-            for await (const item of ingress.stream()) {
+            const prefilterContext = createPrefilterContext(plan);
+            for await (const item of ingress.stream(prefilterContext?.streamOptions)) {
                 if (!predicateFn(item)) {continue;}
                 if (!residualPredicateFn(item)) {continue;}
                 if (seen++ < offset) {continue;}
+                emitPrefilterMetrics(plan.id, prefilterContext, { phase: "executeFirstAsync" });
                 return item;
             }
+            emitPrefilterMetrics(plan.id, prefilterContext, { phase: "executeFirstAsync" });
             return undefined;
         }
 
-        for await (const item of ingress.stream()) {
+        const prefilterContext = createPrefilterContext(plan);
+        for await (const item of ingress.stream(prefilterContext?.streamOptions)) {
             if (!predicateFn(item)) {continue;}
             if (seen++ < offset) {continue;}
+            emitPrefilterMetrics(plan.id, prefilterContext, { phase: "executeFirstAsync" });
             return item;
         }
+        emitPrefilterMetrics(plan.id, prefilterContext, { phase: "executeFirstAsync" });
         return undefined;
     }
 

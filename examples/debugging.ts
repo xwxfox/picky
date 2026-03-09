@@ -1,107 +1,111 @@
 
 import {
-    Engine,
-    IngressEngine,
-    Schema,
-    setPlannerDiagnostics,
-    setPlannerLogger,
-    setPlannerTiming,
-    setPlannerDeepMetrics,
-    setTimingSource,
+  Engine,
+  IngressEngine,
+  Schema,
+  setPlannerDiagnostics,
+  setPlannerLogger,
+  setPlannerTiming,
+  setPlannerDeepMetrics,
+  setTimingSource,
+  fileSource,
+  formatRunReport
 } from "@/index.ts";
-import { fileSource } from "@/io/ingress";
-import { formatRunReport } from "@/core/engine/telemetry";
 import { resolve } from "path";
+
 type LargeItem = {
-    active: boolean;
-    created: Date | string;
-    flags: Array<string>;
-    id: number;
-    Logs: Array<{ tags: Array<string>; type: string; when: Date | string }>;
-    meta: {
-        owner: {
-            name: string;
-            nickname?: string | null;
-        };
+  active: boolean;
+  created: Date | string;
+  flags: Array<string>;
+  id: number;
+  Logs: Array<{ tags: Array<string>; type: string; when: Date | string }>;
+  meta: {
+    owner: {
+      name: string;
+      nickname?: string | null;
     };
-    name: string | null;
-    score: number;
+  };
+  name: string | null;
+  score: number;
 };
 const randomInt = (min: number, max: number) => Math.floor(Math.random() * (max - min)) + min;
 const ownerNames = ["Alice", "Bob", "Cara", "Dee", "Eli"];
 const getRandomNamesArray = (): Array<string> => {
-    const upper = randomInt(1, ownerNames.length + 1);
-    const out: Array<string> = [];
-    for (let i = 0; i < upper; i++) {
-        const random = randomInt(0, ownerNames.length)
-        out.push(ownerNames[random]!);
-    }
-    return out;
+  const upper = randomInt(1, ownerNames.length + 1);
+  const out: Array<string> = [];
+  for (let i = 0; i < upper; i++) {
+    const random = randomInt(0, ownerNames.length)
+    out.push(ownerNames[random]!);
+  }
+  return out;
 };
+
 export const run = async () => {
-    const events: Array<{ source: string; type: string; planId?: string; data?: unknown; metrics?: { counts?: Record<string, number>; durationsMs?: Record<string, number>; extras?: Record<string, unknown> }; timing?: { durationMs: number; label: string; startMs: number; endMs: number; spanId: number; parentId?: number } }> = [];
-    setPlannerLogger((evt) => {
-        events.push(evt);
-        if (evt.type === "timing") { return; }
-        if (evt.type === "metrics") { return; }
-        console.log(`[${evt.source}.${evt.type}]<ID: ${evt.planId ?? "N/A"}>:`);
-        console.dir(evt.data, { depth: null });
+  const events: Array<{ source: string; type: string; planId?: string; data?: unknown; metrics?: { counts?: Record<string, number>; durationsMs?: Record<string, number>; extras?: Record<string, unknown> }; timing?: { durationMs: number; label: string; startMs: number; endMs: number; spanId: number; parentId?: number } }> = [];
+  setPlannerLogger((evt) => {
+    events.push(evt);
+    if (evt.type === "timing") { return; }
+    if (evt.type === "metrics") { return; }
+    console.log(`[${evt.source}.${evt.type}]<ID: ${evt.planId ?? "N/A"}>:`);
+    console.dir(evt.data, { depth: null });
 
-        /*
-                if (evt.event === "planner:final") {
-            console.log("plan", evt.planId);
-            console.dir(evt.data, { depth: null });
-        }*/
-    }, { includeDiagnostics: true, includeTiming: true, includeDeepMetrics: true });
-
-    setPlannerDiagnostics(true);
-    setPlannerTiming(true);
-    setPlannerDeepMetrics(true);
-    setTimingSource("performance");
-
-    const start = performance.now();
-    const source = fileSource<LargeItem>(resolve(import.meta.dir, "../perf/bench-data/large-items/150000.json"),
-        {
-            format: "json",
-            hints: { estimatedCount: 150000 },
-            schema: Schema.inline<LargeItem>()
-        });
-    const input = IngressEngine.fromSource(source)
     /*
+            if (evt.event === "planner:final") {
+        console.log("plan", evt.planId);
+        console.dir(evt.data, { depth: null });
+    }*/
+  }, { includeDiagnostics: true, includeTiming: true, includeDeepMetrics: true });
+
+  setPlannerDiagnostics(true);
+  setPlannerTiming(true);
+  setPlannerDeepMetrics(true);
+  setTimingSource("performance");
+
+  const start = performance.now();
+  const source = fileSource<LargeItem>(resolve(import.meta.dir, "../perf/bench-data/large-items/150000.json"),
+    {
+      format: "json",
+      hints: { estimatedCount: 150000 },
+      schema: Schema.inline<LargeItem>(),
+      prefilterMode: "auto"
+    });
+  const input = IngressEngine.fromSource(source)
+  /*
  
-     const data = await Bun.file(
-         resolve(import.meta.dir, "../perf/bench-data/large-items/150000.json")
-     ).json() as Array<LargeItem>;
-   const dataLoadTime = performance.now() - start;
-     const input = IngressEngine.from(data) // lsp: const input: IngressEngine<LargeItem>
-     */
-    const filter = Engine.from(input);
-    const res = await filter.in("meta.owner.name", getRandomNamesArray()) /* lsp: const res: any */
-        .configureTagger({
-            tags: ["falgs:green"],
-            rules: [
-                {
-                    field: "flags",
-                    in: ["green"],
-                    tag: "falgs:green"
-                }
-            ]
-        })
-        .greaterThan("score", 9)
-        .valueNotNull("name")
-        .dateBetween("created", "2026-01-01", "2026-02-31")
-        .out()
-        .orderByDate("created", { direction: "desc" })
-        .result();
-    const end = performance.now();
-    console.log(`Query took ${(end - start)}ms - sizes: input=${input.length}, res=${res.length}`);
-    console.log("\n");
-    console.log(formatRunReport(events));
+   const data = await Bun.file(
+       resolve(import.meta.dir, "../perf/bench-data/large-items/150000.json")
+   ).json() as Array<LargeItem>;
+ const dataLoadTime = performance.now() - start;
+   const input = IngressEngine.from(data) // lsp: const input: IngressEngine<LargeItem>
+   */
+  const filter = Engine.from(input);
+  const res = await filter.in("meta.owner.name", getRandomNamesArray()) /* lsp: const res: any */
+
+    .greaterThan("score", 9)
+    .valueNotNull("name")
+    .dateBetween("created", "2026-01-01", "2026-02-31")
+    .configureTagger({
+      tags: ["falgs:green"],
+      rules: [
+        {
+          field: "flags",
+          in: ["green"],
+          tag: "falgs:green"
+        }
+      ]
+    })
+    .out()
+    .orderByDate("created", { direction: "desc" })
+    .result();
+  const end = performance.now();
+  console.log(`Query took ${(end - start)}ms - sizes: input=${input.length}, res=${res.length}`);
+  console.log("\n");
+  console.log(formatRunReport(events));
 };
 
 
 if (import.meta.main) {
-    await run();
+  await run();
 }
 
 

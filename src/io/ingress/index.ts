@@ -9,3 +9,4 @@ export * from "./adapters/redis";
 export * from "./adapters/redis-sorted";
 export * from "./adapters/socket";
 export * from "./adapters/sqlite";
+export * from "./prefilter";

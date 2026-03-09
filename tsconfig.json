@@ -6,8 +6,8 @@
     "module": "Preserve",
     "moduleDetection": "force",
     "jsx": "react-jsx",
-    "allowJs": true,
-    "types": ["bun-types"],
+    "allowJs": false,
+    "types": ["@types/bun"],
     "paths": {
       "@/*":  ["./src/*"]
     },
@@ -28,7 +28,10 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noImplicitAny": true,
-    "noPropertyAccessFromIndexSignature": false
+    "noPropertyAccessFromIndexSignature": false,
+
+    "declaration": true,
+		"isolatedDeclarations": false
   },
   "exclude": ["random_testing/schema/*.ts"]
 }

@@ -11,3 +11,4 @@ export * from "./metrics";
 export * from "./plan";
 export * from "./executor";
 export * from "./runtime";
+export * from "./prefilter-plan";

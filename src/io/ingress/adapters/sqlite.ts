@@ -26,7 +26,7 @@ export type SqliteQueryOptions<T extends Record<string, unknown>> = {
 export function sqliteTableSource<T extends Record<string, unknown>>(
     options: SqliteTableOptions<T>
 ): AsyncIngressSource<T> {
-    const stream = () => streamSqlite<T>({
+    const stream = (_options?: import("@/io/ingress/prefilter").PrefilterStreamOptions) => streamSqlite<T>({
         db: options.db,
         params: undefined,
         query: buildSelectAll(options.table, options.columns),
@@ -50,7 +50,7 @@ export function sqliteTableSource<T extends Record<string, unknown>>(
 export function sqliteQuerySource<T extends Record<string, unknown>>(
     options: SqliteQueryOptions<T>
 ): AsyncIngressSource<T> {
-    const stream = () => streamSqlite<T>(options);
+    const stream = (_options?: import("@/io/ingress/prefilter").PrefilterStreamOptions) => streamSqlite<T>(options);
     const materialize = async () => {
         const items: Array<T> = [];
         for await (const item of stream()) {items.push(item);}

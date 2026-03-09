@@ -1,11 +1,14 @@
 import type { Socket } from "bun";
 import type { Schema } from "@/io/schema";
 import type { IngressCapabilities, IngressHints, AsyncIngressSource } from "@/io/ingress/types";
+import type { PrefilterStreamOptions } from "@/io/ingress/prefilter";
+import { applyNdjsonPrefilter } from "@/io/ingress/prefilter-runtime";
 import { AsyncQueue, LineDecoder, isRecord } from "@/io/ingress/utils";
 
 export type SocketIngressOptions<T extends Record<string, unknown>> = {
     capabilities?: Partial<IngressCapabilities>;
     hints?: IngressHints<T>;
+    prefilterMode?: "auto" | "off";
     schema?: Schema<T>;
     socket: Promise<Socket> | Socket;
 };
@@ -13,7 +16,7 @@ export type SocketIngressOptions<T extends Record<string, unknown>> = {
 export function socketSource<T extends Record<string, unknown>>(
     options: SocketIngressOptions<T>
 ): AsyncIngressSource<T> {
-    const stream = () => streamSocket<T>(options);
+    const stream = (streamOptions?: PrefilterStreamOptions) => streamSocket<T>(options, mergePrefilterOptions(streamOptions, options.prefilterMode));
     const materialize = async () => {
         const items: Array<T> = [];
         for await (const item of stream()) {items.push(item);}
@@ -30,7 +33,8 @@ export function socketSource<T extends Record<string, unknown>>(
 }
 
 async function* streamSocket<T extends Record<string, unknown>>(
-    options: SocketIngressOptions<T>
+    options: SocketIngressOptions<T>,
+    streamOptions?: PrefilterStreamOptions
 ): AsyncIterable<T> {
     const socket = await options.socket;
     const queue = new AsyncQueue<T>();
@@ -49,7 +53,7 @@ async function* streamSocket<T extends Record<string, unknown>>(
     const wrapClose = (
         original?: (socket: Socket, error?: Error) => void | Promise<void>
     ) => (sock: Socket, error?: Error) => {
-        decoder.flush(line => pushJsonLine(queue, line));
+        decoder.flush(line => pushJsonLine(queue, line, streamOptions));
         queue.close();
         if (original) {return original(sock, error);}
     };
@@ -64,7 +68,7 @@ async function* streamSocket<T extends Record<string, unknown>>(
         const originalData = typed.data;
         typed.data = (_socket, data) => {
             const chunk = normalizeChunk(data);
-            if (chunk) {decoder.push(chunk, line => pushJsonLine(queue, line));}
+            if (chunk) {decoder.push(chunk, line => pushJsonLine(queue, line, streamOptions));}
             return originalData(_socket, data);
         };
     }
@@ -79,9 +83,22 @@ function normalizeChunk(data: ArrayBuffer | ArrayBufferView): Uint8Array | null 
     return new Uint8Array(data.buffer);
 }
 
-function pushJsonLine<T extends Record<string, unknown>>(queue: AsyncQueue<T>, line: string): void {
+function pushJsonLine<T extends Record<string, unknown>>(
+    queue: AsyncQueue<T>,
+    line: string,
+    options?: PrefilterStreamOptions
+): void {
     if (line.length === 0) {return;}
+    if (!applyNdjsonPrefilter(line, options)) {return;}
     const parsed = JSON.parse(line);
     if (!isRecord(parsed)) {return;}
     queue.push(parsed as T);
+}
+
+function mergePrefilterOptions(
+    options: PrefilterStreamOptions | undefined,
+    mode: "auto" | "off" | undefined
+): PrefilterStreamOptions | undefined {
+    if (!mode || mode === "auto") {return options;}
+    return { ...options, prefilterMode: mode };
 }
